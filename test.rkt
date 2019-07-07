@@ -30,6 +30,7 @@
 ;; --------------------
 
 (eprintf "\nExample 2:\n")
+;; Example with LR0 "virtual" accept state
 (define g2
   (Grammar
    Expr
@@ -58,6 +59,7 @@
 ;; --------------------
 
 (eprintf "\nExample 4:\n")
+;; Example with LR0 "true" accept state
 (define g4 (Grammar A [A (a) (A b)]))
 (define gg4 (new grammar% (g g4)))
 (send gg4 print)
@@ -67,6 +69,7 @@
 ;; --------------------
 
 (eprintf "\nExample 5:\n")
+;; Example with LR0 shift/reduce conflict
 (define g5
   (Grammar
    E
@@ -75,6 +78,20 @@
 (send gg5 print)
 
 (define s5a '((a) (op) (a) (op) (a)))
+
+;; --------------------
+
+(eprintf "\nExample 6:\n")
+;; Example with LR0 reduce/reduce conflict
+(define g6
+  (Grammar
+   A
+   [A (B) (a)]
+   [B (a)]))
+(define gg6 (new grammar% (g g6)))
+(send gg6 print)
+
+(define s6a '((a)))
 
 ;; ----------------------------------------
 
