@@ -55,6 +55,15 @@
 
 (define s3a '((x) (y) (y) (y) (y)))
 
+;; --------------------
+
+(eprintf "\nExample 4:\n")
+(define g4 (Grammar A [A (a) (A b)]))
+(define gg4 (new grammar% (g g4)))
+(send gg4 print)
+
+(define s4a '((a) (b) (b) (b)))
+
 ;; ----------------------------------------
 
 (random-seed 17)
