@@ -10,6 +10,12 @@
 
 ;; ============================================================
 
+(define START (string->uninterned-symbol "START"))
+
+(define (lr-adjust-grammar g)
+  (match-define (grammar start defs) g)
+  (grammar START (cons (def START (list (list start EOF))) defs)))
+
 (define DOT (string->uninterned-symbol "◇"))
 (define (DOT? x) (eq? x DOT))
 
@@ -38,7 +44,8 @@
 
 (define (LR-mixin base%)
   (class base%
-    (super-new)
+    (init g)
+    (super-new [g (lr-adjust-grammar g)])
     (inherit-field start nt-h)
     (inherit nt? terminal?)
 
@@ -104,12 +111,13 @@
         (define state (car stack))
         (eprintf "\nSTATE = ~v\n" state)
         (cond [(shift-state? state)
+               ;; FIXME: hacky treatment of EOF, accept state (below)
                (define next-tok (if (pair? toks) (car toks) EOF))
                (define next-t (if (pair? toks) (caar toks) EOF))
                (cond [(state-goto state next-t)
                       => (lambda (next-state)
                            (eprintf "shift ~v\n" next-tok)
-                           (loop (cdr toks)
+                           (loop (if (pair? toks) (cdr toks) toks)
                                  (list* next-state next-tok stack)))]
                      [else (error 'lr0-parse "next = ~v, state = ~v" next-tok state)])]
               [(reduce-state? state)
@@ -128,12 +136,15 @@
         (eprintf "return to ~v\n" state)
         (eprintf "with stack ~v\n" stack)
 
-        (printf "*** gotos =\n")
-        (pretty-print (hash-ref state-goto-h state))
+        ;; (printf "*** gotos =\n")
+        ;; (pretty-print (hash-ref state-goto-h state))
 
-        (define next-state (state-goto state (car reduced)))
-        (eprintf "goto ~v\n" next-state)
-        (loop toks (list* next-state reduced stack)))
+        (cond [(eq? (car reduced) START)
+               reduced]
+              [else
+               (define next-state (state-goto state (car reduced)))
+               (eprintf "goto ~v\n" next-state)
+               (loop toks (list* next-state reduced stack))]))
       (define (pop-result lritem stack)
         (let loop ([lritem (cdr (reverse lritem))] [stack stack] [acc null])
           (cond [(null? lritem) (values acc stack)]

@@ -4,7 +4,7 @@
          "lr-parser.rkt"
          "util/stream.rkt"
          "test.rkt")
-(provide (all-defined-out))
+(provide (all-defined-out) (all-from-out "test.rkt"))
 
 ;; ============================================================
 
