@@ -1,9 +1,7 @@
 #lang racket/base
 (require racket/match
          racket/class
-         racket/list
          racket/pretty
-         racket/set
          "grammar.rkt"
          "util/stream.rkt")
 (provide (all-defined-out))

@@ -1,13 +1,8 @@
 #lang racket/base
-(require racket/match
-         racket/class
-         racket/list
-         racket/pretty
-         racket/set
+(require racket/class
          "grammar.rkt"
          "ll1-parser.rkt"
-         "lr-parser.rkt"
-         "util/stream.rkt")
+         "lr-parser.rkt")
 (provide (all-defined-out))
 
 ;; ============================================================
