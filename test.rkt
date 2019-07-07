@@ -1,14 +1,12 @@
 #lang racket/base
 (require racket/class
          "grammar.rkt"
-         "ll1-parser.rkt"
-         "lr-parser.rkt")
+         "ll1-parser.rkt")
 (provide (all-defined-out))
 
 ;; ============================================================
 
-(define grammar%
-  (LR-mixin (LL1-mixin grammar-base%)))
+(define grammar% (LL1-mixin grammar-base%))
 
 ;; ============================================================
 
