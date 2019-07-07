@@ -156,7 +156,7 @@
 
     ;; ========================================
 
-    (define/public (make-pstates)
+    (define/private (make-pstates)
       (define next-index 0)
       (define (get-index)
         (begin0 next-index (set! next-index (add1 next-index))))
@@ -187,11 +187,12 @@
         (vector-set! pstates index (state->pstate st index)))
       pstates)
 
-    (define/public (make-parser)
-      (lr0-parser (make-pstates)))
+    (field [pstates (make-pstates)])
+    (define/public (get-pstates))
 
     (define/public (lr0-parse toks)
-      ((make-parser) toks))
+      ;; FIXME: check for conflicts!
+      (lr0-parse* pstates toks))
 
     (define/public (glr-parse toks #:mode [mode 'complete])
       (glr-parse* (make-pstates) toks #:mode mode))
@@ -207,6 +208,8 @@
           (printf "LR0 Conflicts:\n")
           (pretty-print lr0-conflicts))))
     ))
+
+;; ============================================================
 
 ;; PState = (pstate Nat Any PShiftTable PReduce PGotoTable PAccept)
 ;; PShiftTable = Hash[TerminalSymbol => Nat]
@@ -224,7 +227,7 @@
 
 (struct pstate (index label shift reduce goto accept) #:prefab)
 
-(define ((lr0-parser states) toks)
+(define (lr0-parse* states toks)
   (define (loop toks stack)
     (define st (vector-ref states (car stack)))
     ;; (eprintf "\nSTATE = #~v\n" (car stack))
@@ -269,10 +272,12 @@
 
 ;; ============================================================
 
+;; Generalize (Non-Deterministic) LR
+
 (define-syntax-rule (push! var elem) (set! var (cons elem var)))
 
-;; mode : (U 'complete 'first-done 'all)
 (define (glr-parse* states toks #:mode [mode 'complete])
+  ;; mode : (U 'complete 'first-done 'all)
   (define failed null) ;; mutated; (Listof (cons Tokens Stack))
   (define ready null) ;; mutated; (Listof (cons Tokens Stack))
   (define done null) ;; mutated; (Listof (U Result (cons Result Tokens)))
