@@ -1,10 +1,13 @@
 #lang racket/base
 (require racket/class
+         racket/pretty
          "grammar.rkt"
          "lr-parser.rkt"
          "util/stream.rkt"
          "test.rkt")
 (provide (all-defined-out) (all-from-out "test.rkt"))
+
+(pretty-print-columns 100)
 
 ;; ============================================================
 

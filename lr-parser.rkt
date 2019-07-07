@@ -93,7 +93,7 @@
                         (hash-set h dsym (cons lrp (hash-ref h dsym null))))]
                   [else h])))
         (for/hash ([(sym lrps) (in-hash groups)])
-          (values sym (state-closure (map lrprod-advance-dot lrps)))))
+          (values sym (state-closure (map lrprod-advance-dot (reverse lrps))))))
       (closure (list state0) state-goto-children #:worklist hash-values))
 
     (define state0 (state-closure (nt-lrprods start)))
@@ -203,10 +203,11 @@
       (super print)
       (when #t
         (printf "LR0 States:\n")
-        (pretty-print state-goto-h)
-        (when (pair? lr0-conflicts)
-          (printf "LR0 Conflicts:\n")
-          (pretty-print lr0-conflicts))))
+        ;; (pretty-print state-goto-h)
+        (pretty-print pstates))
+      (when (pair? lr0-conflicts)
+        (printf "LR0 Conflicts:\n")
+        (pretty-print lr0-conflicts)))
     ))
 
 ;; ============================================================
