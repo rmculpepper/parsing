@@ -64,6 +64,18 @@
 
 (define s4a '((a) (b) (b) (b)))
 
+;; --------------------
+
+(eprintf "\nExample 5:\n")
+(define g5
+  (Grammar
+   E
+   [E (a) (E op E)]))
+(define gg5 (new grammar% (g g5)))
+(send gg5 print)
+
+(define s5a '((a) (op) (a) (op) (a)))
+
 ;; ----------------------------------------
 
 (random-seed 17)

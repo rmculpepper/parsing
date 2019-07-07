@@ -37,4 +37,10 @@
 (define p4 (new parser% (g g4)))
 (send p4 print)
 
+;; --------------------
+
+(eprintf "\nExample 5:\n")
+(define p5 (new parser% (g g5)))
+(send p5 print)
+
 ;; ----------------------------------------

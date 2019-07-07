@@ -103,7 +103,8 @@
       (let ([goto-h (hash-ref state-goto-h state)])
         (for/or ([sym (in-hash-keys goto-h)]) (terminal? sym))))
     (define (reduce-state? state)
-      (match state [(list lrp) (not (lrprod-symbol-after-dot lrp))] [_ #f]))
+      (for/or ([lrp (in-list state)])
+        (not (lrprod-symbol-after-dot lrp))))
     (define (state-goto state sym)
       (hash-ref (hash-ref state-goto-h state) sym #f))
 
@@ -113,10 +114,8 @@
          (append
           (if (and (shift-state? state) (reduce-state? state))
               `((shift-reduce ,state)) null)
-          (if (< 1 (hash-count
-                    (for/hash ([lrp state]
-                               #:when (not (lrprod-symbol-after-dot lrp)))
-                      (values (prod-nt lrp) #t))))
+          (if (< 1 (for/sum ([lrp (in-list state)])
+                     (if (lrprod-symbol-after-dot lrp) 0 1)))
               `((reduce-reduce ,state)) null)))))
 
     (define/public (naive-lr0-parse toks)
