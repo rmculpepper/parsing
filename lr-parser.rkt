@@ -238,7 +238,7 @@
                   [(true) (cadr (cddr stack))]
                   [(virtual) (cadr stack)]))]
           [(pair? (pstate-reduce st)) ;; (FIXME: assumes no conflicts!)
-           (match-define (list (list nt index arity)) (pstate-reduce st))
+           (match-define (cons (list nt index arity) _) (pstate-reduce st))
            (define-values (args stack*) (pop-values arity stack))
            (define value (list* nt index args))
            ;; (eprintf "REDUCE: ~v\n" value)
