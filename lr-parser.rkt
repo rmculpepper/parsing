@@ -188,7 +188,7 @@
       pstates)
 
     (field [pstates (make-pstates)])
-    (define/public (get-pstates))
+    (define/public (get-pstates) pstates)
 
     (define/public (lr0-parse toks)
       ;; FIXME: check for conflicts!
