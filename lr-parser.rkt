@@ -60,7 +60,7 @@
     (init g)
     (super-new [g (lr-adjust-grammar g)])
     (inherit-field start nt-h)
-    (inherit nt? terminal?)
+    (inherit nt? terminal? nt-follow)
 
     ;; ----------------------------------------
 
@@ -155,7 +155,8 @@
 
     ;; ========================================
 
-    (define/private (make-pstates)
+    (define/private (make-pstates/conflicts)
+      (define conflicts null) ;; mutated, (Listof (list T (U 'shift Red) Red))
       (define next-index 0)
       (define (get-index)
         (begin0 next-index (set! next-index (add1 next-index))))
@@ -181,20 +182,39 @@
           (cond [(equal? (map car reduce) (list START)) 'true]
                 [(equal? (hash-keys shift) (list EOF)) 'virtual]
                 [else #f]))
-        (pstate index label shift reduce goto accept))
+        (define reduce-lookahead (make-reduce-lookahead st index shift reduce))
+        (pstate index label shift reduce goto accept reduce-lookahead))
+      (define (make-reduce-lookahead st index shift reduce)
+        (cond [(null? reduce) #f]
+              [(and (hash-empty? shift) (<= (length reduce) 1)) #f]
+              [else
+               (define reduce-lookahead
+                 (for/fold ([h (hash)]) ([red (in-list reduce)])
+                   (match-define (list red-nt _ _) red)
+                   (define follows (nt-follow red-nt))
+                   (for/fold ([h h]) ([t (in-list follows)])
+                     (cond [(hash-ref shift t #f)
+                            (begin (push! conflicts (list t 'shift red)) h)]
+                           [(hash-ref h t #f)
+                            (begin (push! conflicts (list t (hash-ref h t) red)) h)]
+                           [else (hash-set h t red)]))))
+               (when (pair? conflicts)
+                 (void))
+               reduce-lookahead]))
       (for ([(st index) (in-hash state=>index)])
         (vector-set! pstates index (state->pstate st index)))
-      pstates)
+      (values pstates conflicts))
 
-    (field [pstates (make-pstates)])
+    (define-values (pstates pconflicts) (make-pstates/conflicts))
     (define/public (get-pstates) pstates)
+    (define/public (get-pconflicts) pconflicts)
 
     (define/public (lr0-parse toks)
       ;; FIXME: check for conflicts!
       (lr0-parse* pstates toks))
 
     (define/public (glr-parse toks #:mode [mode 'complete])
-      (glr-parse* (make-pstates) toks #:mode mode))
+      (glr-parse* pstates toks #:mode mode))
 
     ;; ========================================
 
@@ -206,14 +226,18 @@
         (pretty-print pstates))
       (when (pair? lr0-conflicts)
         (printf "LR0 Conflicts:\n")
-        (pretty-print lr0-conflicts)))
+        (pretty-print lr0-conflicts))
+      (when (pair? pconflicts)
+        (printf "?? Conflicts:\n")
+        (pretty-print pconflicts)))
     ))
 
 ;; ============================================================
 
-;; PState = (pstate Nat Any PShiftTable PReduce PGotoTable PAccept)
+;; PState = (pstate Nat Any PShiftTable PReduce PGotoTable PAccept PReduceLookahead)
 ;; PShiftTable = Hash[TerminalSymbol => Nat]
 ;; PReduce = (Listof (list NT Nat Nat))
+;;   PReduceLookahead = #f | Hash[TerminalSymbol => (list NT Nat Nat)]
 ;; PGotoTable = Hash[NT => Nat]
 ;; PAccept = (U #f 'true 'virtual)
 
@@ -225,7 +249,7 @@
 
 ;; Deterministic LR(0)
 
-(struct pstate (index label shift reduce goto accept) #:prefab)
+(struct pstate (index label shift reduce goto accept reduce-lookahead) #:prefab)
 
 (define (lr0-parse* states toks)
   (define (loop toks stack)
@@ -237,19 +261,27 @@
                 (case accept
                   [(true) (cadr (cddr stack))]
                   [(virtual) (cadr stack)]))]
+          [(pstate-reduce-lookahead st)
+           => (lambda (reduce-lookahead)
+                (define next-tok (if (pair? toks) (car toks) EOF-tok))
+                (cond [(hash-ref reduce-lookahead (tok-t next-tok) #f)
+                       => (lambda (red) (reduce st toks stack red))]
+                      [else (shift st toks stack)]))]
           [(pair? (pstate-reduce st)) ;; (FIXME: assumes no conflicts!)
-           (match-define (cons (list nt index arity) _) (pstate-reduce st))
-           (define-values (args stack*) (pop-values arity stack))
-           (define value (list* nt index args))
-           ;; (eprintf "REDUCE: ~v\n" value)
-           (goto toks value stack*)]
+           (reduce st toks stack (car (pstate-reduce st)))]
           ;; otherwise, shift state (FIXME: assumes no conflicts!)
           [else (shift st toks stack)]))
 
+  (define (reduce st toks stack red)
+    (match-define (list nt index arity) red)
+    (define-values (args stack*) (pop-values arity stack))
+    (define value (list* nt index args))
+    ;; (eprintf "REDUCE: ~v\n" value)
+    (goto toks value stack*))
+
   (define (shift st toks stack)
     (define next-tok (if (pair? toks) (car toks) EOF-tok))
-    (define next-t (tok-t next-tok))
-    (cond [(hash-ref (pstate-shift st) next-t #f)
+    (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
            => (lambda (next-state)
                 ;; (eprintf "SHIFT ~v, #~s\n" next-tok next-state)
                 (loop (if (pair? toks) (cdr toks) toks)
@@ -296,14 +328,26 @@
              [(all first-done) (push! done (cons value toks))]
              [(complete) (cond [(null? toks) (push! done value)]
                                [else (push! failed (cons toks stack))])])]
+          [(pstate-reduce-lookahead st)
+           => (lambda (reduce-lookahead)
+                ;; FIXME: should this be delayed until shift step, since
+                ;; it looks at the next token?
+                (define next-tok (if (pair? toks) (car toks) EOF-tok))
+                (cond [(hash-ref reduce-lookahead (tok-t next-tok) #f)
+                       => (lambda (red) (reduce st toks stack red))]
+                      [else (push! ready (cons toks stack))]))]
           [else
-           (for ([reduce (pstate-reduce st)])
-             (match-define (list nt index arity) reduce)
-             (define-values (args stack*) (pop-values arity stack))
-             (define value (list* nt index args))
-             ;; (eprintf "REDUCE: ~v\n" value)
-             (goto toks value stack*))
-           (push! ready (cons toks stack))]))
+           (for ([red (pstate-reduce st)])
+             (reduce st toks stack red))
+           (unless (hash-empty? (pstate-shift))
+             (push! ready (cons toks stack)))]))
+
+  (define (reduce st toks stack red)
+    (match-define (list nt index arity) reduce)
+    (define-values (args stack*) (pop-values arity stack))
+    (define value (list* nt index args))
+    ;; (eprintf "REDUCE: ~v\n" value)
+    (goto toks value stack*))
 
   (define (goto toks reduced stack)
     (define st (vector-ref states (car stack)))

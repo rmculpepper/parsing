@@ -82,16 +82,17 @@
 ;; --------------------
 
 (eprintf "\nExample 6:\n")
-;; Example with LR0 reduce/reduce conflict
+;; Example with LR0 reduce/reduce conflict, solved by lookahead
 (define g6
   (Grammar
    A
-   [A (B) (a)]
-   [B (a)]))
+   [A (B x) (C y)]
+   [B (a)]
+   [C (a)]))
 (define gg6 (new grammar% (g g6)))
 (send gg6 print)
 
-(define s6a '((a)))
+(define s6a '((a) (y)))
 
 ;; ----------------------------------------
 
