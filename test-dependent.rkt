@@ -113,6 +113,13 @@
      tok]
     [_ EOF-tok]))
 
+(define ((mk-msg-tz* toks) peek? kind args)
+  (case kind
+    [(read-data) (list 'data (car args))]
+    [else (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) EOF-tok)]))
+
+(define (mk-msg-tz toks) (peeking-tokenizer (mk-msg-tz* toks)))
+
 ;; ----------------------------------------
 
 (define d1
@@ -123,5 +130,11 @@
 (define dg1 (new grammar% (g d1)))
 (send dg1 print)
 
-(define sd1a '((MsgByte msg1) (Int4 int4) (read-data data)))
-(define sd1b '((MsgByte msg2) (read-data data)))
+;;(define sd1a '((MsgByte msg1) (Int4 int4) (read-data data)))
+;;(define sd1b '((MsgByte msg2) (read-data data)))
+
+(define sd1a '((msg1) (int4 4)))
+(define sd1b '((msg2)))
+
+(send dg1 lr0-parse (mk-msg-tz sd1a))
+(send dg1 lr0-parse (mk-msg-tz sd1b))

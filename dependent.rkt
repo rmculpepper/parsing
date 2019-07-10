@@ -561,7 +561,11 @@
             (for/list ([arg (in-list (cdr tr))])
               (match arg
                 [`(quote ,datum) datum]
-                [index (list-ref stack (+ index index -1))])))
+                [index
+                 (match (list-ref stack (+ index index -1))
+                   ;; FIXME: add tok-value abstraction
+                   [(list* t value _) value]
+                   [(list t) #f])])))
         (tz peek? tr null)))
   (define (loop stack)
     (define st (vector-ref states (car stack)))
@@ -624,19 +628,24 @@
 
 ;; A SimpleTokenizer is (-> Token).
 
-(define (dispatch-tokenizer h)
+(define (peeking-tokenizer tz)
   (define peeked #f)
-  (define (tokenizer peek? kind args)
-    (cond [peeked peeked] ;; FIXME: we trust peek/read have consistent kinds!
-          [peek? (let ([v (tokenizer #f kind args)]) (set! peeked v) v)]
-          [(hash-ref h kind #f)
+  (define (tokenize peek? kind args)
+    (cond [peeked (begin0 peeked (unless peek? (set! peeked #f)))]
+          [peek? (let ([v (tz #f kind args)]) (set! peeked v) v)]
+          [else (tz #f kind args)]))
+  tokenize)
+
+(define (dispatch-tokenizer h)
+  (define (tokenize peek? kind args)
+    (cond [(hash-ref h kind #f)
            => (lambda (v)
                 (cond [(procedure? v)
                        (if (null? args) (v) (dispatch-arity-error kind 0 args))]
                       [(= (car v) (length args)) (apply (cdr v) args)]
                       [else (dispatch-arity-error kind (car v) null)]))]
           [else (error 'tokenizer "unknown token kind\n  name: ~e" kind)]))
-  tokenizer)
+  tokenize)
 
 (define (dispatch-arity-error kind arity args)
   (cond [(zero? arity)
@@ -652,9 +661,3 @@
                                "\n  expected: ~s arguments"
                                "\n  given: ~e")
                 kind arity args)]))
-
-(define ((list->simple-tokenizer toks)) 
-  (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) EOF-tok))
-
-(define (list->tokenizer toks)
-  (dispatch-tokenizer (hash 'default (list->simple-tokenizer toks))))
