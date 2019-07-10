@@ -161,7 +161,7 @@
 ;; ============================================================
 ;; ============================================================
 
-(define dgrammar-base%
+(define grammar-base%
   (class object%
     (init g)
     (field [start (grammar-start g)]
@@ -318,10 +318,13 @@
 
 (define START (string->uninterned-symbol "START"))
 
+;; FIXME: need to treat EOF specially!
+(define EOF-elem (telem 'EOF #f))
+
 (define (lr-adjust-grammar g)
   (match-define (grammar start defs) g)
-  (grammar START (cons (def START (list (list start EOF))) defs)))
-
+  (grammar START (cons (def START (list (list (ntelem start) EOF-elem))) defs)))
+  
 (define DOT (string->uninterned-symbol "◇"))
 (define (DOT? x) (eq? x DOT))
 
@@ -354,12 +357,28 @@
 ;; A LR0-State is (Listof LR0-Prod)
 
 (define (lr-state-label st)
-  (define (prod->label lrp)
-    (match lrp [(prod nt index lritem) (list* nt index '→ lritem)]))
   (let ([base-lrps (filter lrprod-dot-not-initial? st)])
     (cond [(null? base-lrps) (prod->label (car st))]
           [(null? (cdr base-lrps)) (prod->label (car base-lrps))]
           [else (map prod->label base-lrps)])))
+(define (prod->label lrp)
+  (match lrp [(prod nt index lritem) (list* nt index '→ (map elem->label lritem))]))
+(define (elem->label elem)
+  (match elem
+    [(? DOT?) elem]
+    [(ntelem nt) nt]
+    [(telem t 'default) t]
+    [(telem t tr) (list t tr)]))
+
+(define (telems-consistent-tr elems [fail #f])
+  (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
+  (match (group-by telem-tr proper-elems)
+    [(list) #f]
+    [(list group)
+     (telem-tr (car group))]
+    [groups
+     (define kinds (map telem-tr (map car groups)))
+     (if fail (fail kinds) (error 'dep-lr "inconsistent token kinds\n  kinds: ~v" kinds))]))
 
 ;; ------------------------------------------------------------
 
@@ -431,7 +450,7 @@
     ;; ========================================
 
     (define/private (make-pstates/conflicts)
-      (define conflicts null) ;; mutated, (Listof (list T (U 'shift Red) Red))
+      (define conflicts null) ;; mutated, (Listof ...)
       (define next-index 0)
       (define (get-index)
         (begin0 next-index (set! next-index (add1 next-index))))
@@ -441,12 +460,12 @@
       (define pstates (make-vector next-index))
       (define (state->pstate st index)
         (define label (lr-state-label st))
-        (define shift (for/hash ([(sym st) (in-hash (hash-ref state-goto-h st))]
-                                 #:when (terminal? sym))
-                        (values sym (hash-ref state=>index st))))
-        (define goto (for/hash ([(sym st) (in-hash (hash-ref state-goto-h st))]
-                                #:when (nt? sym))
-                       (values sym (hash-ref state=>index st))))
+        (define shift (for/hash ([(elem st) (in-hash (hash-ref state-goto-h st))]
+                                 #:when (telem? elem))
+                        (values elem (hash-ref state=>index st))))
+        (define goto (for/hash ([(elem st) (in-hash (hash-ref state-goto-h st))]
+                                #:when (ntelem? elem))
+                       (values elem (hash-ref state=>index st))))
         ;; FIXME: intern shift, goto?
         (define reduce
           (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))
@@ -454,10 +473,13 @@
             (list nt index (sub1 (length lritem)))))
         (define accept
           (cond [(equal? (map car reduce) (list START)) 'true]
-                [(equal? (hash-keys shift) (list EOF)) 'virtual]
+                [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
                 [else #f]))
         (define reduce-lookahead (make-reduce-lookahead st index shift reduce))
-        (pstate index label shift reduce goto accept reduce-lookahead))
+        (define treader
+          (telems-consistent-tr
+           (append (hash-keys shift) (if reduce-lookahead (hash-keys reduce-lookahead) null))))
+        (pstate index label treader shift reduce goto accept reduce-lookahead))
       (define (make-reduce-lookahead st index shift reduce)
         (cond [(null? reduce) #f]
               [(and (hash-empty? shift) (<= (length reduce) 1)) #f]
@@ -477,6 +499,7 @@
                reduce-lookahead]))
       (for ([(st index) (in-hash state=>index)])
         (vector-set! pstates index (state->pstate st index)))
+      ;; FIXME: if lookaheads, should be consistent with goto successors (??)
       (values pstates conflicts))
 
     (define-values (pstates pconflicts) (make-pstates/conflicts))
@@ -507,7 +530,7 @@
 
 ;; ============================================================
 
-;; PState = (pstate Nat Any PShiftTable PReduce PGotoTable PAccept PReduceLookahead)
+;; PState = (pstate Nat Any TReader PShiftTable PReduce PGotoTable PAccept PReduceLookahead)
 ;; PShiftTable = Hash[TerminalSymbol => Nat]
 ;; PReduce = (Listof (list NT Nat Nat))
 ;;   PReduceLookahead = #f | Hash[TerminalSymbol => (list NT Nat Nat)]
@@ -522,7 +545,7 @@
 
 ;; Deterministic LR(0)
 
-(struct pstate (index label shift reduce goto accept reduce-lookahead) #:prefab)
+(struct pstate (index label tr shift reduce goto accept reduce-lookahead) #:prefab)
 
 (define (lr0-parse* states toks)
   (define (loop toks stack)
