@@ -319,7 +319,7 @@
 (define START (string->uninterned-symbol "START"))
 
 ;; FIXME: need to treat EOF specially!
-(define EOF-elem (telem 'EOF #f))
+(define EOF-elem (telem EOF #f))
 
 (define (lr-adjust-grammar g)
   (match-define (grammar start defs) g)
@@ -479,7 +479,13 @@
         (define treader
           (telems-consistent-tr
            (append (hash-keys shift) (if reduce-lookahead (hash-keys reduce-lookahead) null))))
-        (pstate index label treader shift reduce goto accept reduce-lookahead))
+        (define shift* (for/hash ([(elem st) (in-hash shift)]) (values (telem-t elem) st)))
+        (define goto* (for/hash ([(elem st) (in-hash goto)]) (values (ntelem-nt elem) st)))
+        (define reduce-lookahead*
+          (and reduce-lookahead
+               (for/hash ([(elem red) (in-hash reduce-lookahead)])
+                 (values (telem-t elem) red))))
+        (pstate index label treader shift* reduce goto* accept reduce-lookahead*))
       (define (make-reduce-lookahead st index shift reduce)
         (cond [(null? reduce) #f]
               [(and (hash-empty? shift) (<= (length reduce) 1)) #f]
@@ -550,7 +556,7 @@
 (define (lr0-parse* states toks)
   (define (loop toks stack)
     (define st (vector-ref states (car stack)))
-    ;; (eprintf "\nSTATE = #~v\n" (car stack))
+    ;; (eprintf "\nSTATE = #~v, ~s\n" (car stack) (pstate-label st))
     (cond [(pstate-accept st)
            => (lambda (accept)
                 ;; Did we get here by a shift or a goto?
