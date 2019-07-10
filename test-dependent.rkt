@@ -122,6 +122,7 @@
 
 ;; ----------------------------------------
 
+(eprintf "\nExample d1:\n")
 (define d1
   (DGrammar
    #:start Message
@@ -138,3 +139,84 @@
 
 (send dg1 lr0-parse (mk-msg-tz sd1a))
 (send dg1 lr0-parse (mk-msg-tz sd1b))
+
+;; ----------------------------------------
+
+(eprintf "\nExample d2:\n")
+(define d2
+  (DGrammar
+   #:start Phrase
+   [Phrase (Phrase #\space Word) (Word)]
+   [Word (letter) (letter Word)]))
+(define dg2 (new grammar% (g d2)))
+(send dg2 print)
+
+(define (d2-tokenizer str)
+  (define in (open-input-string str))
+  (peeking-tokenizer
+   (lambda (peek? kind args)
+     (let ([c (read-char in)])
+       (cond [(eof-object? c) EOF-tok]
+             [(eqv? c #\space) (list #\space)]
+             [else (list 'letter c)])))))
+
+(define (reduce2 v)
+  (match v
+    [(list 'Phrase 0 p sp w) (append (reduce2 p) (list (reduce2 w)))]
+    [(list 'Phrase 1 w) (list (reduce2 w))]
+    [(list 'Word 0 c) (list (reduce2 c))]
+    [(list 'Word 1 c w) (cons (reduce2 c) (reduce2 w))]
+    [(list 'letter c) c]))
+
+(define sd2a "hello world how are you today")
+(reduce2 (send dg2 lr0-parse (d2-tokenizer sd2a)))
+
+;; ----------------------------------------
+
+(eprintf "\nExample d3:\n")
+(define d3
+  (DGrammar
+   #:start Settings
+   [Settings (Settings [#\; #:kind char] Setting) (Setting)]
+   [Setting ([c letter #:kind char] [#\= #:kind char] word)]))
+(define dg3 (new grammar% (g d3)))
+(send dg3 print)
+
+(define (reduce3 v)
+  (let loop ([v v])
+    (match v
+      [(list 'Settings 0 ss _ s) (append (loop ss) (list (loop s)))]
+      [(list 'Settings 1 s) (list (loop s))]
+      [(list 'Setting 0 c _ w) (list (loop c) (loop w))]
+      [(list 'letter c) c]
+      [(list 'word w) w])))
+
+(define (d3-tokenizer str)
+  (define in (open-input-string str))
+  (peeking-tokenizer
+   (lambda (peek? kind args)
+     (case kind
+       [(char)
+        (let ([c (read-char in)])
+          (cond [(eof-object? c) EOF-tok]
+                [(eqv? c #\;) (list #\;)]
+                [(eqv? c #\=) (list #\=)]
+                [else (list 'letter c)]))]
+       [else
+        (let loop ([acc null])
+          (let ([c (peek-char in)])
+            (cond [(eof-object? c)
+                   (if (null? acc) EOF-tok (list 'word (apply string (reverse acc))))]
+                  [(eqv? c #\;)
+                   (list 'word (apply string (reverse acc)))]
+                  [else (loop (cons (read-char in) acc))])))]))))
+
+(define sd3a "h=hello;w=world;m=;g=how are you today")
+(reduce3 (send dg3 lr0-parse (d3-tokenizer sd3a)))
+
+
+
+;; IDEA: make char literal have TokenKind 'char by default
+;; IDEA: have integer literal have TokenKind 'integer by default
+;; No, bad idea. But maybe allow configurable defaults?
+;; eg #:token-kind ([(#\space) char]) or #:token-kind ([char char])

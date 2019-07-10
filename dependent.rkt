@@ -29,9 +29,6 @@
 (module structs racket/base
   (provide (all-defined-out))
 
-  ;; An Alphabet is (alphabet Hash[TerminalSymbol => TokenKind])
-  (struct alphabet (t=>kind fun=>arity) #:prefab)
-
   ;; A Grammar is (grammar NT (Listof Def))
   (struct grammar (start defs) #:prefab)
 
@@ -44,13 +41,24 @@
 (require 'structs)
 
 ;; In grammar specification, an Element can be
-;;   NT                         -- short for [_ NT], if don't care about value
+;;   NT                             -- short for [_ NT]
 ;;   [name NT]
-;;   T                          -- short for [_ T], if don't care about value
-;;   [name T]                   -- short for [name T : TK], where T has unique TK
-;;   [name T : TK]
-;;   [T : (TF Expr ...)]        -- short for [_ T : (TF Expr ...)], if we don't care about value
-;;   [name T : (TF Expr ...)]   -- where Expr = name | (quote Datum)
+;;   T                              -- short for [_ T]
+;;   [name T]                       -- short for [name T #:kind default]
+;;   [name T #:kind TK]
+;;   [T #:call (TF Expr ...)]       -- short for [_ T #:call (TF Expr ...)]
+;;   [name T #:call (TF Expr ...)]  -- where Expr = name | (quote Datum)
+
+;; FIXME: add special case:
+;;   [T #:= RacketExpr]
+;; with following conditions:
+;; - the preceding environments must be identical (up to bound-id=?), including indexes
+;; and the following behavior:
+;; - equal-looking expressions (E1, E2, ...) are considered equal and "interned" into
+;;   a single syntax object: (if #t wE2 (begin wE2 ...)), where wEk is Ek wrapped with
+;;   element variable bindings.
+;; - the expression's value (if an acceptable atom) becomes the token with an empty payload
+;;   (if the value is not an acceptable atom, it is replaced with a gensym'd 'bad-token-name
 
 ;; During table construction, an Element is one of
 ;; - (ntelem NT)
@@ -115,21 +123,24 @@
              #:attr name #f
              #:attr mkast (lambda (nt? venv)
                             (cond [(nt? ($ s.ast)) (ntelem ($ s.ast))]
-                                  [else (telem ($ s.ast) 'default)]))))
+                                  [else (telem ($ s.ast) 'default)])))
+    (pattern t:non-symbol-token-name
+             #:attr name #f
+             #:attr mkast (lambda (nt? venv) (telem ($ t.ast) 'default))))
   (define-splicing-syntax-class elem-content #:attributes (mkast)
     #:description "element content"
-    (pattern (~seq :t/nt))
-    (pattern (~seq t:symbol #:kind tk:symbol)
+    (pattern (~seq t:token-name #:kind tk:symbol)
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tk to list to check at runtime?
                             (cond [(nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol")]
                                   [else (telem ($ t.ast) ($ tk.ast))])))
-    (pattern (~seq t:symbol #:call (tf:symbol arg:texpr ...))
-                            ;; FIXME: add tf and arity to list to check at runtime?
+    (pattern (~seq t:token-name #:call (tf:symbol arg:texpr ...))
              #:attr mkast (lambda (nt? venv)
+                            ;; FIXME: add tf and arity to list to check at runtime?
                             (cond [(nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol")]
                                   [else (telem ($ t.ast)
-                                               (cons ($ tf.ast) (map-apply ($ arg.mkast) venv)))]))))
+                                               (cons ($ tf.ast) (map-apply ($ arg.mkast) venv)))])))
+    (pattern (~seq :t/nt)))
   (define-syntax-class texpr #:attributes (mkast)
     #:description "token-function argument"
     #:literals (quote)
@@ -142,6 +153,19 @@
              #:attr mkast (lambda (venv) `(quote ,(syntax->datum #'datum)))))
   (define-syntax-class symbol #:attributes (ast)
     (pattern x:id #:attr ast (syntax-e #'x)))
+  (define-syntax-class token-name #:attributes (ast)
+    (pattern (~or :symbol :non-symbol-token-name)))
+  (define-syntax-class non-symbol-token-name #:attributes (ast)
+    (pattern x #:attr ast (syntax-e #'x)
+             #:when (or (char? ($ ast)) (boolean? ($ ast)) (exact-integer? ($ ast)))))
+
+  (define (wrap-expr expr venv [start-index 0]) ;; open ref to the-stack
+    (define bindings
+      (for/list ([var (in-list venv)]
+                 [index (in-naturals start-index)]
+                 #:when (identifier? var))
+        #`[#,var (stack-value-ref the-stack (quote #,index))]))
+    #`(let #,bindings #,expr))
   (void))
 
 (define-syntax DGrammar
@@ -369,6 +393,7 @@
     [(? DOT?) elem]
     [(ntelem nt) nt]
     [(telem t 'default) t]
+    [(telem t #f) t]
     [(telem t tr) (list t tr)]))
 
 (define (telems-consistent-tr elems [fail #f])
@@ -529,7 +554,7 @@
         (printf "LR0 Conflicts:\n")
         (pretty-print lr0-conflicts))
       (when (pair? pconflicts)
-        (printf "?? Conflicts:\n")
+        (printf "SLR Conflicts:\n")
         (pretty-print pconflicts)))
     ))
 
