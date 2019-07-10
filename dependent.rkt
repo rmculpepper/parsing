@@ -589,6 +589,10 @@
                 ;; (eprintf "SHIFT ~v, #~s\n" next-tok next-state)
                 (loop (if (pair? toks) (cdr toks) toks)
                       (list* next-state next-tok stack)))]
+          ;; Accept pre-parsed non-terminals from the lexer too.
+          [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
+           => (lambda (next-state)
+                (loop (if (pair? toks) (cdr toks) toks) (list* next-state next-tok stack)))]
           [else (error 'lr0-parse "next = ~v, state = ~v" next-tok (car stack))]))
 
   (define (goto toks reduced stack)
