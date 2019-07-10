@@ -107,7 +107,8 @@
   (define-syntax-class elem #:attributes (name mkast)
     #:description #f
     (pattern :t/nt #:attr name #f)
-    (pattern [name:id :elem-content]))
+    (pattern [name:id :elem-content])
+    (pattern [:elem-content] #:attr name #f))
   (define-syntax-class t/nt #:attributes (mkast)
     #:description #f
     (pattern s:symbol

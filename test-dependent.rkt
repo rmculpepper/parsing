@@ -12,6 +12,7 @@
 
 ;; ============================================================
 
+#|
 (eprintf "\nExample 1:\n")
 (define g1
   (DGrammar
@@ -97,5 +98,17 @@
 (send gg6 print)
 
 (define s6a '((a) (y)))
+|#
 
 ;; ----------------------------------------
+
+(define d1
+  (DGrammar
+   #:start Message
+   [Message ([msg1 #:kind MsgByte] [len int4 #:kind Int4] [data data #:call (read-data len)])
+            ([msg2 #:kind MsgByte] [data #:call (read-data '8)])]))
+(define dg1 (new grammar% (g d1)))
+(send dg1 print)
+
+(define sd1a '((msg1) (int4) (data)))
+(define sd1b '((msg2) (data)))
