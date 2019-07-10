@@ -1,8 +1,10 @@
 #lang racket/base
 (require racket/class
+         racket/match
          racket/pretty
          "dependent.rkt")
-(provide (all-defined-out))
+(provide (all-defined-out)
+         (all-from-out "dependent.rkt"))
 
 (pretty-print-columns 100)
 
@@ -100,6 +102,17 @@
 (define s6a '((a) (y)))
 |#
 
+;; ============================================================
+
+(define ((mktokenizer ktoks) peek? kind args)
+  (match ktoks
+    [(cons (cons tk tok) ktoks*)
+     (unless (equal? tk kind)
+       (error 'tokenizer "parser requested kind ~e, but token has kind ~e" kind tk))
+     (set! ktoks ktoks*)
+     tok]
+    [_ EOF-tok]))
+
 ;; ----------------------------------------
 
 (define d1
@@ -110,5 +123,5 @@
 (define dg1 (new grammar% (g d1)))
 (send dg1 print)
 
-(define sd1a '((msg1) (int4) (data)))
-(define sd1b '((msg2) (data)))
+(define sd1a '((MsgByte msg1) (Int4 int4) (read-data data)))
+(define sd1b '((MsgByte msg2) (read-data data)))

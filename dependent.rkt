@@ -513,9 +513,9 @@
     (define/public (get-pstates) pstates)
     (define/public (get-pconflicts) pconflicts)
 
-    (define/public (lr0-parse toks)
+    (define/public (lr0-parse get-token)
       ;; FIXME: check for conflicts!
-      (lr0-parse* pstates toks))
+      (lr0-parse* pstates get-token))
 
     ;; ========================================
 
@@ -554,8 +554,16 @@
 
 (struct pstate (index label tr shift reduce goto accept reduce-lookahead) #:prefab)
 
-(define (lr0-parse* states toks)
-  (define (loop toks stack)
+(define (lr0-parse* states tz)
+  (define (get-token peek? tr stack)
+    (if (pair? tr)
+        (tz peek? (car tr)
+            (for/list ([arg (in-list (cdr tr))])
+              (match arg
+                [`(quote ,datum) datum]
+                [index (list-ref stack (+ index index -1))])))
+        (tz peek? tr null)))
+  (define (loop stack)
     (define st (vector-ref states (car stack)))
     ;; (eprintf "\nSTATE = #~v, ~s\n" (car stack) (pstate-label st))
     (cond [(pstate-accept st)
@@ -566,45 +574,87 @@
                   [(virtual) (cadr stack)]))]
           [(pstate-reduce-lookahead st)
            => (lambda (reduce-lookahead)
-                (define next-tok (if (pair? toks) (car toks) EOF-tok))
+                (define next-tok (get-token #t (pstate-tr st) stack))
                 (cond [(hash-ref reduce-lookahead (tok-t next-tok) #f)
-                       => (lambda (red) (reduce st toks stack red))]
-                      [else (shift st toks stack)]))]
+                       => (lambda (red) (reduce st stack red))]
+                      [else (shift st stack)]))]
           [(pair? (pstate-reduce st)) ;; (FIXME: assumes no conflicts!)
-           (reduce st toks stack (car (pstate-reduce st)))]
+           (reduce st stack (car (pstate-reduce st)))]
           ;; otherwise, shift state (FIXME: assumes no conflicts!)
-          [else (shift st toks stack)]))
+          [else (shift st stack)]))
 
-  (define (reduce st toks stack red)
+  (define (reduce st stack red)
     (match-define (list nt index arity) red)
     (define-values (args stack*) (pop-values arity stack))
     (define value (list* nt index args))
     ;; (eprintf "REDUCE: ~v\n" value)
-    (goto toks value stack*))
+    (goto value stack*))
 
-  (define (shift st toks stack)
-    (define next-tok (if (pair? toks) (car toks) EOF-tok))
+  (define (shift st stack)
+    (define next-tok (get-token #f (pstate-tr st) stack))
     (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
            => (lambda (next-state)
                 ;; (eprintf "SHIFT ~v, #~s\n" next-tok next-state)
-                (loop (if (pair? toks) (cdr toks) toks)
-                      (list* next-state next-tok stack)))]
+                (loop (list* next-state next-tok stack)))]
           ;; Accept pre-parsed non-terminals from the lexer too.
           [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
            => (lambda (next-state)
-                (loop (if (pair? toks) (cdr toks) toks) (list* next-state next-tok stack)))]
+                (loop (list* next-state next-tok stack)))]
           [else (error 'lr0-parse "next = ~v, state = ~v" next-tok (car stack))]))
 
-  (define (goto toks reduced stack)
+  (define (goto reduced stack)
     (define st (vector-ref states (car stack)))
     ;; (eprintf "RETURN VIA #~s\n" (car stack))
     (define next-state (hash-ref (pstate-goto st) (car reduced)))
     ;; (eprintf "GOTO ~v\n" next-state)
-    (loop toks (list* next-state reduced stack)))
-  (loop toks (list 0)))
+    (loop (list* next-state reduced stack)))
+  (loop (list 0)))
 
 (define (pop-values arity stack)
   (let loop ([arity arity] [stack stack] [acc null])
     (if (zero? arity)
         (values acc stack)
         (loop (sub1 arity) (cddr stack) (cons (cadr stack) acc)))))
+
+;; ============================================================
+
+;; A Tokenizer is (Boolean Symbol (Listof Arg) -> Token).
+;; The tokenizer should be aware of peek vs read, so that for example
+;; on input ports it can implement token-peeking by port-peeking.
+
+;; A SimpleTokenizer is (-> Token).
+
+(define (dispatch-tokenizer h)
+  (define peeked #f)
+  (define (tokenizer peek? kind args)
+    (cond [peeked peeked] ;; FIXME: we trust peek/read have consistent kinds!
+          [peek? (let ([v (tokenizer #f kind args)]) (set! peeked v) v)]
+          [(hash-ref h kind #f)
+           => (lambda (v)
+                (cond [(procedure? v)
+                       (if (null? args) (v) (dispatch-arity-error kind 0 args))]
+                      [(= (car v) (length args)) (apply (cdr v) args)]
+                      [else (dispatch-arity-error kind (car v) null)]))]
+          [else (error 'tokenizer "unknown token kind\n  name: ~e" kind)]))
+  tokenizer)
+
+(define (dispatch-arity-error kind arity args)
+  (cond [(zero? arity)
+         (error 'tokenizer
+                (string-append "token kind used with arguments"
+                               "\n  token kind: ~s"
+                               "\n  given: ~e")
+                kind args)]
+        [else
+         (error 'tokenizer
+                (string-append "token function arity mismatch"
+                               "\n  token function: ~s"
+                               "\n  expected: ~s arguments"
+                               "\n  given: ~e")
+                kind arity args)]))
+
+(define ((list->simple-tokenizer toks)) 
+  (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) EOF-tok))
+
+(define (list->tokenizer toks)
+  (dispatch-tokenizer (hash 'default (list->simple-tokenizer toks))))
