@@ -44,10 +44,10 @@
 ;;   NT                             -- short for [_ NT]
 ;;   [name NT]
 ;;   T                              -- short for [_ T]
-;;   [name T]                       -- short for [name T #:kind default]
-;;   [name T #:kind TK]
-;;   [T #:call (TF Expr ...)]       -- short for [_ T #:call (TF Expr ...)]
-;;   [name T #:call (TF Expr ...)]  -- where Expr = name | (quote Datum)
+;;   [name T]                       -- short for [name T #:read default]
+;;   [name T #:read TK]
+;;   [T #:read (TF Expr ...)]       -- short for [_ T #:read (TF Expr ...)]
+;;   [name T #:read (TF Expr ...)]  -- where Expr = name | (quote Datum)
 ;;   [T #:value (LimRacketExpr Expr ...)] -- where LimRacketExpr = id
 
 ;; FIXME: add special case:
@@ -133,12 +133,12 @@
              #:attr mkast (lambda (nt? venv) (telem ($ t.ast) 'default))))
   (define-splicing-syntax-class elem-content #:attributes (mkast)
     #:description "element content"
-    (pattern (~seq t:token-name #:kind tk:symbol)
+    (pattern (~seq t:token-name #:read tk:symbol)
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tk to list to check at runtime?
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
                             (telem ($ t.ast) ($ tk.ast))))
-    (pattern (~seq t:token-name #:call (tf:symbol arg:texpr ...))
+    (pattern (~seq t:token-name #:read (tf:symbol arg:texpr ...))
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tf and arity to list to check at runtime?
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
@@ -148,7 +148,7 @@
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
                             (record-disappeared-uses #'re)
                             (let ([re (free-id-table-ref! (racket-intern-table) #'re #'re)])
-                              (telem ($ t.ast) (cons re (map-apply ($ arg.mkast) venv))))))
+                              (telem ($ t.ast) (list* '#:apply re (map-apply ($ arg.mkast) venv))))))
     (pattern (~seq :t/nt)))
   (define-syntax-class texpr #:attributes (mkast)
     #:description "token-function argument"
@@ -165,8 +165,9 @@
   (define-syntax-class token-name #:attributes (ast)
     (pattern (~or :symbol :non-symbol-token-name)))
   (define-syntax-class non-symbol-token-name #:attributes (ast)
-    (pattern x #:attr ast (syntax-e #'x)
-             #:when (or (char? ($ ast)) (boolean? ($ ast)) (exact-integer? ($ ast)))))
+    (pattern (~and x (~fail #:unless (let ([v (syntax-e #'x)])
+                                       (or (char? v) (boolean? v) (exact-integer? v)))))
+             #:attr ast (syntax-e #'x)))
 
   (define (wrap-expr expr venv [start-index 0]) ;; open ref to the-stack
     (define bindings
@@ -182,7 +183,9 @@
     [(_ #:start start:symbol d:ntdef ...)
      (define (nt? s) (member s ($ d.nt.ast)))
      (unless (nt? ($ start.ast)) (wrong-syntax #'start "expected nonterminal symbol"))
-     (datum->expression (grammar ($ start.ast) (map-apply ($ d.mkast) nt?)))]))
+     (parameterize ((racket-intern-table (make-free-id-table)))
+       (datum->expression (grammar ($ start.ast) (map-apply ($ d.mkast) nt?))
+                          (lambda (v) (cond [(syntax? v) v] [else #f]))))]))
 
 ;; ============================================================
 
@@ -405,6 +408,9 @@
     [(telem t #f) t]
     [(telem t tr) (list t tr)]))
 
+
+(define debug-consistent #f)
+
 (define (telems-consistent-tr elems [fail #f])
   (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
   (match (group-by telem-tr proper-elems)
@@ -413,6 +419,7 @@
      (telem-tr (car group))]
     [groups
      (define kinds (map telem-tr (map car groups)))
+     (set! debug-consistent kinds)
      (if fail (fail kinds) (error 'dep-lr "inconsistent token kinds\n  kinds: ~v" kinds))]))
 
 ;; ------------------------------------------------------------
@@ -588,19 +595,29 @@
 
 (struct pstate (index label tr shift reduce goto accept reduce-lookahead) #:prefab)
 
+(define (apply->token f args)
+  (define v (apply f args))
+  (list (if (token-name? v) v 'bad-token-name)))
+
+(define (token-name? v)
+  (or (symbol? v) (exact-integer? v) (boolean? v) (char? v)))
+
 (define (lr0-parse* states tz)
   (define (get-token peek? tr stack)
-    (if (pair? tr)
-        (tz peek? (car tr)
-            (for/list ([arg (in-list (cdr tr))])
-              (match arg
-                [`(quote ,datum) datum]
-                [index
-                 (match (list-ref stack (+ index index -1))
-                   ;; FIXME: add tok-value abstraction
-                   [(list* t value _) value]
-                   [(list t) #f])])))
-        (tz peek? tr null)))
+    (cond [(symbol? tr) (tz peek? tr null)]
+          [(symbol? (car tr)) (tz peek? (car tr) (get-token-args (cdr tr) stack))]
+          [(eq? (car tr) '#:apply) (apply->token (cadr tr) (get-token-args (cddr tr) stack))]
+          [else (error 'lr0-parse "bad tr: ~e" tr)]))
+  (define (get-token-args args stack)
+    (for/list ([arg (in-list args)])
+      (match arg
+        [`(quote ,datum) datum]
+        [index
+         (match (list-ref stack (+ index index -1))
+           ;; FIXME: add tok-value abstraction
+           [(list* t value _) value]
+           [(list t) #f])])))
+
   (define (loop stack)
     (define st (vector-ref states (car stack)))
     ;; (eprintf "\nSTATE = #~v, ~s\n" (car stack) (pstate-label st))
@@ -695,3 +712,26 @@
                                "\n  expected: ~s arguments"
                                "\n  given: ~e")
                 kind arity args)]))
+
+(define (get-char-token in #:token-name [tname 'char] #:special [special null])
+  (define next (peek-char in))
+  (cond [(eof-object? next) EOF-tok]
+        [(memv next special) (begin (read-char in) (list next next))]
+        [else (begin (read-char in) (list tname next))]))
+
+(define (get-byte-token in #:token-name [tname 'byte] #:special [special null])
+  (define next (peek-byte in))
+  (cond [(eof-object? next) EOF-tok]
+        [(memv next special) (begin (read-byte in) (list next next))]
+        [else (begin (read-byte in) (list tname next))]))
+
+(define (get-string-token in #:token-name [tname 'string] #:delimiters [delims null])
+  (define next (peek-char in))
+  (cond [(eof-object? next) EOF-tok]
+        [else
+         (define out (open-output-string))
+         (let loop ()
+           (define next (peek-char in))
+           (cond [(or (eof-object? next) (memv next delims))
+                  (list tname (get-output-string out))]
+                 [else (begin (read-char in) (write-char next out) (loop))]))]))

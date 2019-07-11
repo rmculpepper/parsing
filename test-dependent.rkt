@@ -126,8 +126,8 @@
 (define d1
   (DGrammar
    #:start Message
-   [Message ([msg1 #:kind MsgByte] [len int4 #:kind Int4] [data data #:call (read-data len)])
-            ([msg2 #:kind MsgByte] [data #:call (read-data '8)])]))
+   [Message ([msg1 #:read MsgByte] [len int4 #:read Int4] [data data #:read (read-data len)])
+            ([msg2 #:read MsgByte] [data #:read (read-data '8)])]))
 (define dg1 (new grammar% (g d1)))
 (send dg1 print)
 
@@ -155,10 +155,7 @@
   (define in (open-input-string str))
   (peeking-tokenizer
    (lambda (peek? kind args)
-     (let ([c (read-char in)])
-       (cond [(eof-object? c) EOF-tok]
-             [(eqv? c #\space) (list #\space)]
-             [else (list 'letter c)])))))
+     (get-char-token in #:token-name 'letter #:special '(#\space)))))
 
 (define (reduce2 v)
   (match v
@@ -177,8 +174,8 @@
 (define d3
   (DGrammar
    #:start Settings
-   [Settings (Settings [#\; #:kind char] Setting) (Setting)]
-   [Setting ([c letter #:kind char] [#\= #:kind char] word)]))
+   [Settings (Settings [#\; #:read char] Setting) (Setting)]
+   [Setting ([c letter #:read char] [#\= #:read char] word)]))
 (define dg3 (new grammar% (g d3)))
 (send dg3 print)
 
@@ -196,27 +193,35 @@
   (peeking-tokenizer
    (lambda (peek? kind args)
      (case kind
-       [(char)
-        (let ([c (read-char in)])
-          (cond [(eof-object? c) EOF-tok]
-                [(eqv? c #\;) (list #\;)]
-                [(eqv? c #\=) (list #\=)]
-                [else (list 'letter c)]))]
-       [else
-        (let loop ([acc null])
-          (let ([c (peek-char in)])
-            (cond [(eof-object? c)
-                   (if (null? acc) EOF-tok (list 'word (apply string (reverse acc))))]
-                  [(eqv? c #\;)
-                   (list 'word (apply string (reverse acc)))]
-                  [else (loop (cons (read-char in) acc))])))]))))
+       [(char) (get-char-token in #:token-name 'letter #:special '(#\; #\=))]
+       [else (get-string-token in #:token-name 'word #:delimiters '(#\;))]))))
 
 (define sd3a "h=hello;w=world;m=;g=how are you today")
 (reduce3 (send dg3 lr0-parse (d3-tokenizer sd3a)))
-
-
 
 ;; IDEA: make char literal have TokenKind 'char by default
 ;; IDEA: have integer literal have TokenKind 'integer by default
 ;; No, bad idea. But maybe allow configurable defaults?
 ;; eg #:token-kind ([(#\space) char]) or #:token-kind ([char char])
+
+;; ----------------------------------------
+
+(eprintf "\nExample d4:\n")
+(define d4
+  (DGrammar
+   #:start S
+   [S ([m byte] [#t #:apply (zero? m)])
+      ([n byte] [#f #:apply (zero? n)] [v byte])]))
+(define dg4 (new grammar% (g d4)))
+(send dg4 print)
+
+(define (d4-tokenizer bstr)
+  (define in (open-input-bytes bstr))
+  (peeking-tokenizer
+   (lambda (peek? kind args)
+     (get-byte-token in))))
+
+(define sd4a (bytes 1 42))
+(define sd4b (bytes 0))
+(send dg4 lr0-parse (d4-tokenizer sd4a))
+(send dg4 lr0-parse (d4-tokenizer sd4b))

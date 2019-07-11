@@ -3,15 +3,17 @@
 (provide datum->expression)
 
 ;; datum->expression : Datum -> Syntax[Expr]
-;; Produces code that evaluates (at same phase!) to an equivalent value.
-;; (Note: to produce phase-0 expr from phase-1 value, this module would
-;; need to require racket/base for-template.)
-(define (datum->expression v)
+;; Preserves eq-sharing of syntax.
+(define (datum->expression v [convert (lambda (v) #f)])
+  (define syntax-h (make-hash))
+  (define (make-syntax-ref stx)
+    (hash-ref! syntax-h stx (lambda () (car (generate-temporaries '(stx))))))
   (define (const v) `(quote ,v))
   (define (const? e) (and (pair? e) (eq? (car e) 'quote)))
   (define (loop v)
-    (cond [(syntax? v)
-           `(quote-syntax ,v)]
+    (cond [(convert v) => values]
+          [(syntax? v)
+           (make-syntax-ref `(quote-syntax ,v))]
           [(pair? v)
            (cond [(and (list? v) (andmap syntax? v))
                   `(syntax->list (quote-syntax ,(datum->syntax #f v)))]
@@ -39,4 +41,8 @@
           ;; FIXME: boxes, hashes?
           [else
            (const v)]))
-  (datum->syntax #'here (loop v)))
+  (let ([main-expr (loop v)])
+    (datum->syntax #'here
+                   `(let ,(for/list ([(expr var) (in-hash syntax-h)])
+                            (list var expr))
+                      ,main-expr))))
