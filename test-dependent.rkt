@@ -126,8 +126,10 @@
 (define d1
   (DGrammar
    #:start Message
-   [Message ([msg1 #:read MsgByte] [len int4 #:read Int4] [data data #:read (read-data len)])
-            ([msg2 #:read MsgByte] [data #:read (read-data '8)])]))
+   [Message [([msg1 #:read MsgByte] [len int4 #:read Int4] [data data #:read (read-data len)])
+             #:> (list 1 len data)]
+            [([msg2 #:read MsgByte] [d data #:read (read-data '8)])
+             #:> (list 2 d)]]))
 (define dg1 (new grammar% (g d1)))
 (send dg1 print)
 
@@ -146,8 +148,10 @@
 (define d2
   (DGrammar
    #:start Phrase
-   [Phrase (Phrase #\space Word) (Word)]
-   [Word (letter) (letter Word)]))
+   [Phrase [([p Phrase] #\space [w Word]) #:> (append p (list w))]
+           [([w Word]) #:> (list w)]]
+   [Word [([c letter]) #:> (list c)]
+         [([c letter] [w Word]) #:> (cons c w)]]))
 (define dg2 (new grammar% (g d2)))
 (send dg2 print)
 
@@ -157,16 +161,8 @@
    (lambda (peek? kind args)
      (get-char-token in #:token-name 'letter #:special '(#\space)))))
 
-(define (reduce2 v)
-  (match v
-    [(list 'Phrase 0 p sp w) (append (reduce2 p) (list (reduce2 w)))]
-    [(list 'Phrase 1 w) (list (reduce2 w))]
-    [(list 'Word 0 c) (list (reduce2 c))]
-    [(list 'Word 1 c w) (cons (reduce2 c) (reduce2 w))]
-    [(list 'letter c) c]))
-
 (define sd2a "hello world how are you today")
-(reduce2 (send dg2 lr0-parse (d2-tokenizer sd2a)))
+(send dg2 lr0-parse (d2-tokenizer sd2a))
 
 ;; ----------------------------------------
 
@@ -174,19 +170,11 @@
 (define d3
   (DGrammar
    #:start Settings
-   [Settings (Settings [#\; #:read char] Setting) (Setting)]
-   [Setting ([c letter #:read char] [#\= #:read char] word)]))
+   [Settings [([ss Settings] [#\; #:read char] [s Setting]) #:> (append ss (list s))]
+             [([s Setting]) #:> (list s)]]
+   [Setting [([c letter #:read char] [#\= #:read char] [w word]) #:> (list c w)]]))
 (define dg3 (new grammar% (g d3)))
 (send dg3 print)
-
-(define (reduce3 v)
-  (let loop ([v v])
-    (match v
-      [(list 'Settings 0 ss _ s) (append (loop ss) (list (loop s)))]
-      [(list 'Settings 1 s) (list (loop s))]
-      [(list 'Setting 0 c _ w) (list (loop c) (loop w))]
-      [(list 'letter c) c]
-      [(list 'word w) w])))
 
 (define (d3-tokenizer str)
   (define in (open-input-string str))
@@ -197,7 +185,7 @@
        [else (get-string-token in #:token-name 'word #:delimiters '(#\;))]))))
 
 (define sd3a "h=hello;w=world;m=;g=how are you today")
-(reduce3 (send dg3 lr0-parse (d3-tokenizer sd3a)))
+(send dg3 lr0-parse (d3-tokenizer sd3a))
 
 ;; IDEA: make char literal have TokenKind 'char by default
 ;; IDEA: have integer literal have TokenKind 'integer by default
@@ -210,8 +198,8 @@
 (define d4
   (DGrammar
    #:start S
-   [S ([m byte] [#t #:apply (zero? m)])
-      ([n byte] [#f #:apply (zero? n)] [v byte])]))
+   [S [([m byte] [#t #:apply (zero? m)]) #:> 'none]
+      [([n byte] [#f #:apply (zero? n)] [v byte]) #:> v]]))
 (define dg4 (new grammar% (g d4)))
 (send dg4 print)
 

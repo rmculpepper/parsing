@@ -32,8 +32,11 @@
   ;; A Grammar is (grammar NT (Listof Def))
   (struct grammar (start defs) #:prefab)
 
-  ;; A Def is (def NT (Listof ElemSequence))
+  ;; A Def is (def NT (Listof Prod))
   (struct def (nt rhss) #:prefab)
+
+  ;; A Prod is (prod NT Nat ElemSequence Action)
+  (struct prod (nt index item action) #:prefab)
 
   (struct ntelem (nt) #:prefab)
   (struct telem (t tr) #:prefab)
@@ -48,7 +51,8 @@
 ;;   [name T #:read TK]
 ;;   [T #:read (TF Expr ...)]       -- short for [_ T #:read (TF Expr ...)]
 ;;   [name T #:read (TF Expr ...)]  -- where Expr = name | (quote Datum)
-;;   [T #:value (LimRacketExpr Expr ...)] -- where LimRacketExpr = id
+;;   [T #:apply (RacketVariable Expr ...)] -- short for [_ name T #:apply (RacketVariable Expr ...)]
+;;   [name T #:apply (RacketVariable Expr ...)]
 
 ;; FIXME: add special case:
 ;;   [T #:= RacketExpr]
@@ -97,6 +101,7 @@
 (require (for-syntax racket/base
                      racket/syntax
                      syntax/id-table
+                     syntax/transformer
                      (rename-in syntax/parse [attribute $])
                      "util/datum-to-expr.rkt"
                      'structs))
@@ -105,22 +110,38 @@
   (define (map-apply fs . xs) (for/list ([f (in-list fs)]) (apply f xs)))
   (define-syntax-class ntdef #:attributes (nt nt.ast mkast)
     #:description "nonterminal definition"
-    (pattern [nt:symbol rhs:elemseq ...]
+    (pattern [nt:symbol rhs:ntrhs ...]
              #:attr mkast (lambda (nt?)
-                            (def ($ nt.ast) (map-apply ($ rhs.mkast) nt?)))))
+                            (def ($ nt.ast)
+                              (for/list ([rhs-mkast (in-list ($ rhs.mkast))] [index (in-naturals)])
+                                (rhs-mkast ($ nt.ast) index nt?))))))
+  (define-syntax-class ntrhs #:attributes (mkast)
+    (pattern [es:elemseq a:action]
+             #:attr mkast (lambda (nt index nt?)
+                            (define-values (es-ast venv) (($ es.mkast) nt?))
+                            (define a-ast (($ a.mkast) venv))
+                            (prod nt index es-ast a-ast))))
+  (define-splicing-syntax-class action #:attributes (mkast)
+    #:description "action routine"
+    (pattern (~seq #:> ~! e:expr ...+)
+             #:attr mkast (lambda (venv) (wrap-expr #'(let () e ...) venv))))
   (define-syntax-class elemseq #:attributes (mkast)
     #:description "element sequence"
     (pattern (e:elem ...)
              #:attr mkast (lambda (nt?)
-                            (for/fold ([acc null] [venv null] #:result (reverse acc))
+                            (for/fold ([acc null] [venv null] #:result (values (reverse acc) venv))
                                       ([e-mkast (in-list ($ e.mkast))] [var (in-list ($ e.name))])
                               (values (cons (e-mkast nt? venv) acc)
                                       (cons var venv))))))
   (define-syntax-class elem #:attributes (name mkast)
     #:description #f
     (pattern :t/nt #:attr name #f)
-    (pattern [name:id :elem-content])
+    (pattern [:name :elem-content])
     (pattern [:elem-content] #:attr name #f))
+  (define-syntax-class name #:attributes (name)
+    #:literals (_)
+    (pattern (~and _ ~!) #:attr name #f)
+    (pattern x:id #:attr name #'x))
   (define-syntax-class t/nt #:attributes (mkast)
     #:description #f
     (pattern s:symbol
@@ -169,13 +190,18 @@
                                        (or (char? v) (boolean? v) (exact-integer? v)))))
              #:attr ast (syntax-e #'x)))
 
-  (define (wrap-expr expr venv [start-index 0]) ;; open ref to the-stack
+  (struct token-variable (vvar tvar)
+    #:property prop:procedure
+    (lambda (self stx)
+      (let ([vvar (token-variable-vvar self)] [tvar (token-variable-tvar self)])
+        ((make-variable-like-transformer #`(get-token-value '#,vvar #,tvar)) stx))))
+
+  (define (wrap-expr expr venv)
+    (define tok-vars (generate-temporaries venv))
     (define bindings
-      (for/list ([var (in-list venv)]
-                 [index (in-naturals start-index)]
-                 #:when (identifier? var))
-        #`[#,var (stack-value-ref the-stack (quote #,index))]))
-    #`(let #,bindings #,expr))
+      (for/list ([tvar (in-list tok-vars)] [vvar (in-list (reverse venv))] #:when (identifier? vvar))
+        #`[#,vvar (token-variable (quote-syntax #,vvar) (quote-syntax #,tvar))]))
+    #`(lambda #,tok-vars (letrec-syntax #,bindings #,expr)))
   (void))
 
 (define-syntax DGrammar
@@ -189,14 +215,28 @@
 
 ;; ============================================================
 
-;; A Token is (cons Symbol Any); the symbol is the Terminal name.
+;; ============================================================
+
+;; A Token value is a list containing the token name and an optional payload.
 (define (tok-t tok) (car tok))
+
+(define (tok-value tok)
+  (match tok
+    [(list t) #f]
+    [(list* t v _) v]))
+
+(define (get-token-value who tok)
+  (match tok
+    [(list t) (error who "token has no payload\n  token: ~e" t)]
+    [(list* t v _) v]))
 
 (define EOF (string->uninterned-symbol "EOF"))
 (define EOF-tok (list EOF))
 
 ;; ============================================================
 ;; ============================================================
+
+;; FIXME: def-rhss -> (Listof Prod) now! not (Listof (Listof Elem))
 
 (define grammar-base%
   (class object%
@@ -366,8 +406,7 @@
 (define (DOT? x) (eq? x DOT))
 
 ;; An LR0-Item is an Item that contains exactly one DOT symbol.
-;; An LR0-Prod is (prod NT Nat LR0-Item)
-(struct prod (nt index item) #:prefab)
+;; An LR0-Prod is (prod NT Nat LR0-Item Action)
 
 (define (lritem-elem-after-dot lritem)
   (let loop ([lritem lritem])
@@ -377,6 +416,10 @@
 (define (lritem-dot-initial? lritem) (DOT? (car lritem)))
 (define (lritem-dot-final? lritem) (DOT? (last lritem)))
 
+(define (prod->initial-lrprod p)
+  (match-define (prod nt index item action) p)
+  (prod nt index (cons DOT item) action))
+
 (define (lrprod-elem-after-dot lrp)
   (lritem-elem-after-dot (prod-item lrp)))
 
@@ -385,11 +428,12 @@
 (define (lrprod-dot-final? lrp) (lritem-dot-final? (prod-item lrp)))
 
 (define (lrprod-advance-dot lrp)
-  (match-define (prod nt index lritem) lrp)
+  (match-define (prod nt index lritem action) lrp)
   (prod nt index
         (let loop ([lritem lritem])
           (cond [(DOT? (car lritem)) (list* (cadr lritem) DOT (cddr lritem))]
-                [else (cons (car lritem) (loop (cdr lritem)))]))))
+                [else (cons (car lritem) (loop (cdr lritem)))]))
+        action))
 
 ;; A LR0-State is (Listof LR0-Prod)
 
@@ -399,7 +443,7 @@
           [(null? (cdr base-lrps)) (prod->label (car base-lrps))]
           [else (map prod->label base-lrps)])))
 (define (prod->label lrp)
-  (match lrp [(prod nt index lritem) (list* nt index '→ (map elem->label lritem))]))
+  (match lrp [(prod nt index lritem _) (list* nt index '→ (map elem->label lritem))]))
 (define (elem->label elem)
   (match elem
     [(? DOT?) elem]
@@ -434,9 +478,8 @@
     ;; ----------------------------------------
 
     (define nt-lrprods-h
-      (for/hash ([(nt rhss) (in-hash nt-h)])
-        (values nt (for/list ([item rhss] [index (in-naturals)])
-                     (prod nt index (cons DOT item))))))
+      (for/hash ([(nt prods) (in-hash nt-h)])
+        (values nt (map prod->initial-lrprod prods))))
 
     (define/public (nt-lrprods nt)
       ;; Returns the list of { NT -> DOT <Item> } productions (that is, DOT-first)
@@ -511,8 +554,8 @@
         ;; FIXME: intern shift, goto?
         (define reduce
           (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))
-            (match-define (prod nt index lritem) lrp)
-            (list nt index (sub1 (length lritem)))))
+            (match-define (prod nt index lritem action) lrp)
+            (list nt index (sub1 (length lritem)) action)))
         (define accept
           (cond [(equal? (map car reduce) (list START)) 'true]
                 [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
@@ -639,9 +682,9 @@
           [else (shift st stack)]))
 
   (define (reduce st stack red)
-    (match-define (list nt index arity) red)
+    (match-define (list nt index arity action) red)
     (define-values (args stack*) (pop-values arity stack))
-    (define value (list* nt index args))
+    (define value (apply action args)) ;; (list* nt index args)
     ;; (eprintf "REDUCE: ~v\n" value)
     (goto value stack*))
 
@@ -665,7 +708,7 @@
     (loop (list* next-state reduced stack)))
   (loop (list 0)))
 
-(define (pop-values arity stack)
+(define (pop-values arity stack) ;; produces values in original order
   (let loop ([arity arity] [stack stack] [acc null])
     (if (zero? arity)
         (values acc stack)
