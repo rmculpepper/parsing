@@ -38,9 +38,12 @@
                 (define elem-es (map loop (cdr (vector->list (struct->vector v)))))
                 (cond [(andmap const? elem-es) (const v)]
                       [else `(make-prefab-struct (quote ,key) ,@elem-es)]))]
-          ;; FIXME: boxes, hashes?
-          [else
-           (const v)]))
+          [(box? v)
+           (let ([e (loop (unbox v))])
+             (cond [(const? e) (const v)]
+                   [else `(box-immutable ,e)]))]
+          ;; FIXME: hashes?
+          [else (const v)]))
   (let ([main-expr (loop v)])
     (datum->syntax #'here
                    `(let ,(for/list ([(expr var) (in-hash syntax-h)])

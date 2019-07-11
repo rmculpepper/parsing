@@ -104,22 +104,6 @@
 
 ;; ============================================================
 
-(define ((mktokenizer ktoks) peek? kind args)
-  (match ktoks
-    [(cons (cons tk tok) ktoks*)
-     (unless (equal? tk kind)
-       (error 'tokenizer "parser requested kind ~e, but token has kind ~e" kind tk))
-     (set! ktoks ktoks*)
-     tok]
-    [_ EOF-tok]))
-
-(define ((mk-msg-tz* toks) peek? kind args)
-  (case kind
-    [(read-data) (list 'data (car args))]
-    [else (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) EOF-tok)]))
-
-(define (mk-msg-tz toks) (peeking-tokenizer (mk-msg-tz* toks)))
-
 ;; ----------------------------------------
 
 (eprintf "\nExample d1:\n")
@@ -133,14 +117,18 @@
 (define dg1 (new grammar% (g d1)))
 (send dg1 print)
 
-;;(define sd1a '((MsgByte msg1) (Int4 int4) (read-data data)))
-;;(define sd1b '((MsgByte msg2) (read-data data)))
-
 (define sd1a '((msg1) (int4 4)))
 (define sd1b '((msg2)))
 
-(send dg1 lr0-parse (mk-msg-tz sd1a))
-(send dg1 lr0-parse (mk-msg-tz sd1b))
+(define (d1-tokenizer toks)
+  (peeking-tokenizer
+   (lambda (peek? kind args)
+     (case kind
+       [(read-data) (tok 'data (car args))]
+       [else (if (pair? toks) (begin0 (apply tok (car toks)) (set! toks (cdr toks))) EOF-tok)]))))
+
+(send dg1 lr0-parse (d1-tokenizer sd1a))
+(send dg1 lr0-parse (d1-tokenizer sd1b))
 
 ;; ----------------------------------------
 

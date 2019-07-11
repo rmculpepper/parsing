@@ -4,73 +4,67 @@
          racket/list
          racket/pretty
          racket/set
-         "util/misc.rkt")
+         "util/misc.rkt"
+         "private/grammar-rep.rkt")
 (provide (all-defined-out))
 
-;; Kinded Tokens and Dependent Grammars
+;; ============================================================
 
-;; A TokenKind is a Symbol.
+;; A TokenValue is one of
+;; - Terminal                       -- token without payload
+;; - (cons Terminal TokenPayload)   -- token with payload
 
-;; A Token has a default TokenKind, which is used by the parser to
-;; select the TokenReader for a set of expected Tokens. But a
-;; TokenReader may produce other Tokens. (?? limit to declared ??)
+(define tok (case-lambda [(t) t] [(t v) (cons t v)]))
 
-;; The pseudo-terminal EOF may belong to multiple TokenKinds.
+(define (tok-t tok)
+  (match tok [(cons t _) t] [(? ok-terminal? t) t]))
+
+(define (tok-v tok) ;; returns #f is no payload
+  (match tok [(cons _ v) v] [(? ok-terminal? t) #f]))
+
+(define (tok-has-v? tok) (pair? tok))
+
+(define (get-token-value who tok)
+  (match tok
+    [(cons _ v) v]
+    [(? ok-terminal? t) (error who "token has no payload\n  token: ~e" t)]))
+
+(define EOF (string->uninterned-symbol "EOF"))
+(define EOF-tok EOF)
+
+;; ============================================================
+
+;; A TokenReader represents an instruction to the scanner about how to
+;; read the next token.
+
+;; A TerminalElement can be polymorphic: it is compatible with any
+;; TokenReader. The EOF pseudo-terminal is polymorphic. A polymorphic
+;; TerminalElement is represented by a TokenReader field of #f.
 
 ;; ?? Useful to limit membership of TokenKind explicitly?
 ;; ?? Useful to limit membership of TokenFunction results explicitly?
-
-;; A Tokenizer has the following interface:
-;; - read : (TokenKind -> Token) and (TokenFunction Any ... -> Token)
-;; - peek : (TokenKind -> Token) -- functions not supported ??
-
 ;; ?? Don't allow functions in lookahead position?
+;; ?? Orthogonal: token may have payload, may not.
+;; ?? Can a Tokenizer produce a nonterminal instance?
 
-(module structs racket/base
-  (provide (all-defined-out))
+;; In grammar specification, an Element is one of
+;; - [name NT]
+;; - [name T #:read (TR Expr ...)]  -- where Expr = name | (quote Datum)
+;; - [name T #:apply (RacketVariable Expr ...)]
+;; where TExpr = name | (quote Datum).
 
-  ;; A Grammar is (grammar NT (Listof Def))
-  (struct grammar (start defs) #:prefab)
+;; In addition, the following abbreviated Elements are allowed:
+;; - NT                             -- short for [_ NT]
+;; - T                              -- short for [_ T #:read (default)]
+;; - [name T]                       -- short for [name T #:read (default)]
+;; - [name T #:read TR]             -- short for [name T #:read (TR)]
+;; - [T #:read (TR TExpr ...)]      -- short for [_ T #:read (TR TExpr ...)]
+;; - [T #:apply (RacketVar TExpr ...)] -- short for [_ name T #:apply (RacketVar TExpr ...)]
 
-  ;; A Def is (def NT (Listof Prod))
-  (struct def (nt rhss) #:prefab)
-
-  ;; A Prod is (prod NT Nat ElemSequence Action)
-  (struct prod (nt index item action) #:prefab)
-
-  (struct ntelem (nt) #:prefab)
-  (struct telem (t tr) #:prefab)
-  )
-(require 'structs)
-
-;; In grammar specification, an Element can be
-;;   NT                             -- short for [_ NT]
-;;   [name NT]
-;;   T                              -- short for [_ T]
-;;   [name T]                       -- short for [name T #:read default]
-;;   [name T #:read TK]
-;;   [T #:read (TF Expr ...)]       -- short for [_ T #:read (TF Expr ...)]
-;;   [name T #:read (TF Expr ...)]  -- where Expr = name | (quote Datum)
-;;   [T #:apply (RacketVariable Expr ...)] -- short for [_ name T #:apply (RacketVariable Expr ...)]
-;;   [name T #:apply (RacketVariable Expr ...)]
-
-;; FIXME: add special case:
-;;   [T #:= RacketExpr]
-;; with following conditions:
-;; - the preceding environments must be identical (up to bound-id=?), including indexes
-;; and the following behavior:
-;; - equal-looking expressions (E1, E2, ...) are considered equal and "interned" into
-;;   a single syntax object: (if #t wE2 (begin wE2 ...)), where wEk is Ek wrapped with
-;;   element variable bindings.
-;; - the expression's value (if an acceptable atom) becomes the token with an empty payload
-;;   (if the value is not an acceptable atom, it is replaced with a gensym'd 'bad-token-name
-
-;; During table construction, an Element is one of
-;; - (ntelem NT)
-;; - (telem T TReader)
-;;   where TReader is TKind or (list TFunction Expr ...)
-;;   where TKind and TFunction are Symbols
-;;   and Expr is Nat or (quote Datum) -- nat is stack index
+;; A TokenReader (during table construction) is one of
+;; - (cons Symbol (Listof TExpr))
+;; - (cons '#:apply Procedure (Listof TExpr))
+;; where TExpr = Nat | (list Datum) -- a stack index or a literal value.
 
 
 
@@ -90,21 +84,13 @@
 ;;   Msg -> [f Flag] [true  : (has-X-bit? f)] X Y
 ;;   Msg -> [f Flag] [false : (has-X-bit? f)] Y
 
-
-;; FIXME: allow booleans, fixnums, and characters to be Tokens?
-;; Booleans would make the example above nicer.
-
-;; Orthogonal: token may have payload, may not.
-
-;; Can a Tokenizer produce a nonterminal instance? Why not?
-
 (require (for-syntax racket/base
                      racket/syntax
                      syntax/id-table
                      syntax/transformer
                      (rename-in syntax/parse [attribute $])
                      "util/datum-to-expr.rkt"
-                     'structs))
+                     "private/grammar-rep.rkt"))
 (begin-for-syntax
   (define racket-intern-table (make-parameter #f)) ;; free-id-table[Id]
   (define (map-apply fs . xs) (for/list ([f (in-list fs)]) (apply f xs)))
@@ -123,7 +109,7 @@
                             (prod nt index es-ast a-ast))))
   (define-splicing-syntax-class action #:attributes (mkast)
     #:description "action routine"
-    (pattern (~seq #:> ~! e:expr ...+)
+    (pattern (~seq (~optional #:>) ~! e:expr ...+)
              #:attr mkast (lambda (venv) (wrap-expr #'(let () e ...) venv))))
   (define-syntax-class elemseq #:attributes (mkast)
     #:description "element sequence"
@@ -148,17 +134,17 @@
              #:attr name #f
              #:attr mkast (lambda (nt? venv)
                             (cond [(nt? ($ s.ast)) (ntelem ($ s.ast))]
-                                  [else (telem ($ s.ast) 'default)])))
+                                  [else (telem ($ s.ast) '(default))])))
     (pattern t:non-symbol-token-name
              #:attr name #f
-             #:attr mkast (lambda (nt? venv) (telem ($ t.ast) 'default))))
+             #:attr mkast (lambda (nt? venv) (telem ($ t.ast) '(default)))))
   (define-splicing-syntax-class elem-content #:attributes (mkast)
     #:description "element content"
     (pattern (~seq t:token-name #:read tk:symbol)
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tk to list to check at runtime?
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
-                            (telem ($ t.ast) ($ tk.ast))))
+                            (telem ($ t.ast) (list ($ tk.ast)))))
     (pattern (~seq t:token-name #:read (tf:symbol arg:texpr ...))
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tf and arity to list to check at runtime?
@@ -180,7 +166,7 @@
                                   (and id (bound-identifier=? #'var id) index))
                                 (wrong-syntax #'var "unbound element variable"))))
     (pattern (quote datum)
-             #:attr mkast (lambda (venv) `(quote ,(syntax->datum #'datum)))))
+             #:attr mkast (lambda (venv) (list (syntax->datum #'datum)))))
   (define-syntax-class symbol #:attributes (ast)
     (pattern x:id #:attr ast (syntax-e #'x)))
   (define-syntax-class token-name #:attributes (ast)
@@ -212,26 +198,6 @@
      (parameterize ((racket-intern-table (make-free-id-table)))
        (datum->expression (grammar ($ start.ast) (map-apply ($ d.mkast) nt?))
                           (lambda (v) (cond [(syntax? v) v] [else #f]))))]))
-
-;; ============================================================
-
-;; ============================================================
-
-;; A Token value is a list containing the token name and an optional payload.
-(define (tok-t tok) (car tok))
-
-(define (tok-value tok)
-  (match tok
-    [(list t) #f]
-    [(list* t v _) v]))
-
-(define (get-token-value who tok)
-  (match tok
-    [(list t) (error who "token has no payload\n  token: ~e" t)]
-    [(list* t v _) v]))
-
-(define EOF (string->uninterned-symbol "EOF"))
-(define EOF-tok (list EOF))
 
 ;; ============================================================
 ;; ============================================================
@@ -378,14 +344,16 @@
     ;; ----------------------------------------
 
     (define/public (print)
-      (printf "Nullable:\n")
-      (pretty-print nt-nullable-h)
-      (printf "Min length:\n")
-      (pretty-print nt-minlen-h)
-      (printf "First:\n")
-      (pretty-print nt-first-h)
-      (printf "Follow:\n")
-      (pretty-print nt-follow-h))
+      (printf "Nullable: ~s\n"
+              (for/list ([(nt n?) (in-hash nt-nullable-h)] #:when n?) nt))
+      (printf "Min length: ~s\n"
+              (for/list ([(nt len) (in-hash nt-minlen-h)]) (list nt len)))
+      (printf "First: ~s\n"
+              (for/list ([(nt fs) (in-hash nt-first-h)])
+                (list nt ': (map telem-t fs))))
+      (printf "Follow: ~s\n"
+              (for/list ([(nt fs) (in-hash nt-follow-h)])
+                (list nt ': (for/list ([f fs]) (if (telem? f) (telem-t f) f))))))
     ))
 
 ;; ============================================================
@@ -447,10 +415,11 @@
   (match elem
     [(? DOT?) elem]
     [(ntelem nt) nt]
-    [(telem t 'default) t]
+    [(telem t '(default)) t]
     [(telem t #f) t]
+    [(telem t (list tr)) (list t tr)]
+    [(telem t (list* '#:apply proc args)) (list* t '#:apply (object-name proc) args)]
     [(telem t tr) (list t tr)]))
-
 
 (define debug-consistent #f)
 
@@ -645,22 +614,17 @@
   (or (symbol? v) (exact-integer? v) (boolean? v) (char? v)))
 
 (define (lr0-parse* states tz)
-  (eprintf "STARTING PARSE\n")
   (define DEBUG? #f)
   (define (get-token peek? tr stack)
-    (cond [(symbol? tr) (tz peek? tr null)]
-          [(symbol? (car tr)) (tz peek? (car tr) (get-token-args (cdr tr) stack))]
+    (cond [(symbol? (car tr)) (tz peek? (car tr) (get-token-args (cdr tr) stack))]
           [(eq? (car tr) '#:apply) (apply->token (cadr tr) (get-token-args (cddr tr) stack))]
           [else (error 'lr0-parse "bad tr: ~e" tr)]))
   (define (get-token-args args stack)
     (for/list ([arg (in-list args)])
       (match arg
-        [`(quote ,datum) datum]
-        [index
-         (match (list-ref stack (+ index index -1))
-           ;; FIXME: add tok-value abstraction
-           [(list* t value _) value]
-           [(list t) #f])])))
+        [(list datum) datum]
+        [(? exact-nonnegative-integer? index)
+         (tok-v (list-ref stack (+ index index -1)))])))
 
   (define (loop stack)
     (define st (vector-ref states (car stack)))
@@ -669,8 +633,8 @@
            => (lambda (accept)
                 ;; Did we get here by a shift or a goto?
                 (case accept
-                  [(true) (cadr (cddr stack))]
-                  [(virtual) (cadr stack)]))]
+                  [(true) (tok-v (cadr (cddr stack)))]
+                  [(virtual) (tok-v (cadr stack))]))]
           [(pstate-reduce-lookahead st)
            => (lambda (reduce-lookahead)
                 (define next-tok (get-token #t (pstate-tr st) stack))
@@ -685,7 +649,7 @@
   (define (reduce st stack red)
     (match-define (list nt index arity action) red)
     (define-values (args stack*) (pop-values arity stack))
-    (define value (list nt (apply action args))) ;; (list* nt index args)
+    (define value (tok nt (apply action args))) ;; (list* nt index args)
     (when DEBUG? (eprintf "REDUCE: ~v\n" value))
     (goto value stack*))
 
@@ -760,14 +724,14 @@
 (define (get-char-token in #:token-name [tname 'char] #:special [special null])
   (define next (peek-char in))
   (cond [(eof-object? next) EOF-tok]
-        [(memv next special) (begin (read-char in) (list next next))]
-        [else (begin (read-char in) (list tname next))]))
+        [(memv next special) (begin (read-char in) (tok next next))]
+        [else (begin (read-char in) (tok tname next))]))
 
 (define (get-byte-token in #:token-name [tname 'byte] #:special [special null])
   (define next (peek-byte in))
   (cond [(eof-object? next) EOF-tok]
-        [(memv next special) (begin (read-byte in) (list next next))]
-        [else (begin (read-byte in) (list tname next))]))
+        [(memv next special) (begin (read-byte in) (tok next next))]
+        [else (begin (read-byte in) (tok tname next))]))
 
 (define (get-string-token in #:token-name [tname 'string] #:delimiters [delims null])
   (define next (peek-char in))
@@ -777,5 +741,5 @@
          (let loop ()
            (define next (peek-char in))
            (cond [(or (eof-object? next) (memv next delims))
-                  (list tname (get-output-string out))]
+                  (tok tname (get-output-string out))]
                  [else (begin (read-char in) (write-char next out) (loop))]))]))
