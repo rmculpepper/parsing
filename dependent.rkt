@@ -48,6 +48,7 @@
 ;;   [name T #:kind TK]
 ;;   [T #:call (TF Expr ...)]       -- short for [_ T #:call (TF Expr ...)]
 ;;   [name T #:call (TF Expr ...)]  -- where Expr = name | (quote Datum)
+;;   [T #:value (LimRacketExpr Expr ...)] -- where LimRacketExpr = id
 
 ;; FIXME: add special case:
 ;;   [T #:= RacketExpr]
@@ -95,9 +96,12 @@
 
 (require (for-syntax racket/base
                      racket/syntax
+                     syntax/id-table
                      (rename-in syntax/parse [attribute $])
+                     "util/datum-to-expr.rkt"
                      'structs))
 (begin-for-syntax
+  (define racket-intern-table (make-parameter #f)) ;; free-id-table[Id]
   (define (map-apply fs . xs) (for/list ([f (in-list fs)]) (apply f xs)))
   (define-syntax-class ntdef #:attributes (nt nt.ast mkast)
     #:description "nonterminal definition"
@@ -132,14 +136,19 @@
     (pattern (~seq t:token-name #:kind tk:symbol)
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tk to list to check at runtime?
-                            (cond [(nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol")]
-                                  [else (telem ($ t.ast) ($ tk.ast))])))
+                            (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
+                            (telem ($ t.ast) ($ tk.ast))))
     (pattern (~seq t:token-name #:call (tf:symbol arg:texpr ...))
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tf and arity to list to check at runtime?
-                            (cond [(nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol")]
-                                  [else (telem ($ t.ast)
-                                               (cons ($ tf.ast) (map-apply ($ arg.mkast) venv)))])))
+                            (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
+                            (telem ($ t.ast) (cons ($ tf.ast) (map-apply ($ arg.mkast) venv)))))
+    (pattern (~seq t:token-name #:apply (re:id arg:texpr ...))
+             #:attr mkast (lambda (nt? venv)
+                            (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
+                            (record-disappeared-uses #'re)
+                            (let ([re (free-id-table-ref! (racket-intern-table) #'re #'re)])
+                              (telem ($ t.ast) (cons re (map-apply ($ arg.mkast) venv))))))
     (pattern (~seq :t/nt)))
   (define-syntax-class texpr #:attributes (mkast)
     #:description "token-function argument"
@@ -173,7 +182,7 @@
     [(_ #:start start:symbol d:ntdef ...)
      (define (nt? s) (member s ($ d.nt.ast)))
      (unless (nt? ($ start.ast)) (wrong-syntax #'start "expected nonterminal symbol"))
-     #`(quote #,(grammar ($ start.ast) (map-apply ($ d.mkast) nt?)))]))
+     (datum->expression (grammar ($ start.ast) (map-apply ($ d.mkast) nt?)))]))
 
 ;; ============================================================
 
