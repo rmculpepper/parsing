@@ -236,8 +236,6 @@
 ;; ============================================================
 ;; ============================================================
 
-;; FIXME: def-rhss -> (Listof Prod) now! not (Listof (Listof Elem))
-
 (define grammar-base%
   (class object%
     (init g)
@@ -263,7 +261,6 @@
     (field [nt-h (for/hash ([def defs]) (values (def-nt def) (def-rhss def)))])
 
     (define/public (nt? sym) (and (hash-ref nt-h sym #f) #t))
-    (define/public (terminal? sym) (and (symbol? sym) (not (nt? sym))))
 
     (define/public (nt-rhss nt)
       (or (hash-ref nt-h nt #f) (error 'nt-rhss "undefined nonterminal: ~e" nt)))
@@ -275,7 +272,8 @@
        (lambda (h)
          (for/fold ([h h]) ([def defs])
            (hash-set h (def-nt def)
-                     (for/or ([item (def-rhss def)]) (item-nullable? item #:h h)))))
+                     (for/or ([p (def-rhss def)])
+                       (item-nullable? (prod-item p) #:h h)))))
        (hash)))
 
     ;; *-nullable? : ... -> Boolean
@@ -295,8 +293,8 @@
          (for/fold ([h h]) ([def defs])
            (hash-set h (def-nt def)
                      (apply min MAX-MINLEN
-                            (for/list ([item (def-rhss def)])
-                              (item-minlen item #:h h))))))
+                            (for/list ([p (def-rhss def)])
+                              (item-minlen (prod-item p) #:h h))))))
        (hash)))
 
     ;; *-minlen : ... -> Nat
@@ -315,8 +313,8 @@
          (for/hash ([def defs])
            (values (def-nt def)
                    (apply set-union '()
-                          (for/list ([item (def-rhss def)])
-                            (item-first item #:h h))))))
+                          (for/list ([p (def-rhss def)])
+                            (item-first (prod-item p) #:h h))))))
        (hash)))
 
     ;; *-first : ... -> (Listof telem)
@@ -340,8 +338,8 @@
          (for/hash ([def defs])
            (values (def-nt def)
                    (apply set-union '()
-                          (for/list ([item (def-rhss def)])
-                            (item-final item #:h h))))))
+                          (for/list ([p (def-rhss def)])
+                            (item-final (prod-item p) #:h h))))))
        (hash)))
 
     ;; *-final : ... -> (Listof telem)
@@ -362,9 +360,9 @@
     (define nt-follow-h
       (fixpoint
        (lambda (h)
-         (for*/fold ([h h]) ([def defs] [item (def-rhss def)])
+         (for*/fold ([h h]) ([def defs] [p (def-rhss def)])
            (for/fold ([h h] [follows-this (hash-ref h (def-nt def) null)] #:result h)
-                     ([elem (reverse item)])
+                     ([elem (reverse (prod-item p))])
              (match elem
                [(ntelem nt)
                 (values (hash-set h nt (set-union (hash-ref h nt null) follows-this))
@@ -400,8 +398,9 @@
 
 (define (lr-adjust-grammar g)
   (match-define (grammar start defs) g)
-  (grammar START (cons (def START (list (list (ntelem start) EOF-elem))) defs)))
-  
+  (define start-p (prod START 0 (list (ntelem start) EOF-elem) (lambda (s e) s)))
+  (grammar START (cons (def START (list start-p)) defs)))
+
 (define DOT (string->uninterned-symbol "◇"))
 (define (DOT? x) (eq? x DOT))
 
@@ -473,7 +472,7 @@
     (init g)
     (super-new [g (lr-adjust-grammar g)])
     (inherit-field start nt-h)
-    (inherit nt? terminal? nt-follow)
+    (inherit nt? nt-follow)
 
     ;; ----------------------------------------
 
@@ -577,7 +576,7 @@
               [else
                (define reduce-lookahead
                  (for/fold ([h (hash)]) ([red (in-list reduce)])
-                   (match-define (list red-nt _ _) red)
+                   (match-define (list red-nt _ _ _) red)
                    (define follows (nt-follow red-nt))
                    (for/fold ([h h]) ([t (in-list follows)])
                      (cond [(hash-ref shift t #f)
@@ -646,6 +645,8 @@
   (or (symbol? v) (exact-integer? v) (boolean? v) (char? v)))
 
 (define (lr0-parse* states tz)
+  (eprintf "STARTING PARSE\n")
+  (define DEBUG? #f)
   (define (get-token peek? tr stack)
     (cond [(symbol? tr) (tz peek? tr null)]
           [(symbol? (car tr)) (tz peek? (car tr) (get-token-args (cdr tr) stack))]
@@ -663,7 +664,7 @@
 
   (define (loop stack)
     (define st (vector-ref states (car stack)))
-    ;; (eprintf "\nSTATE = #~v, ~s\n" (car stack) (pstate-label st))
+    (when DEBUG? (eprintf "\nSTATE = #~v, ~s\n" (car stack) (pstate-label st)))
     (cond [(pstate-accept st)
            => (lambda (accept)
                 ;; Did we get here by a shift or a goto?
@@ -684,15 +685,15 @@
   (define (reduce st stack red)
     (match-define (list nt index arity action) red)
     (define-values (args stack*) (pop-values arity stack))
-    (define value (apply action args)) ;; (list* nt index args)
-    ;; (eprintf "REDUCE: ~v\n" value)
+    (define value (list nt (apply action args))) ;; (list* nt index args)
+    (when DEBUG? (eprintf "REDUCE: ~v\n" value))
     (goto value stack*))
 
   (define (shift st stack)
     (define next-tok (get-token #f (pstate-tr st) stack))
     (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
            => (lambda (next-state)
-                ;; (eprintf "SHIFT ~v, #~s\n" next-tok next-state)
+                (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
                 (loop (list* next-state next-tok stack)))]
           ;; Accept pre-parsed non-terminals from the lexer too.
           [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
@@ -702,9 +703,9 @@
 
   (define (goto reduced stack)
     (define st (vector-ref states (car stack)))
-    ;; (eprintf "RETURN VIA #~s\n" (car stack))
+    (when DEBUG? (eprintf "RETURN VIA #~s\n" (car stack)))
     (define next-state (hash-ref (pstate-goto st) (car reduced)))
-    ;; (eprintf "GOTO ~v\n" next-state)
+    (when DEBUG? (eprintf "GOTO ~v\n" next-state))
     (loop (list* next-state reduced stack)))
   (loop (list 0)))
 

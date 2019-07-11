@@ -6,7 +6,7 @@
 (provide (all-defined-out)
          (all-from-out "dependent.rkt"))
 
-(pretty-print-columns 100)
+(pretty-print-columns 200)
 
 ;; ============================================================
 
