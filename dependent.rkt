@@ -63,7 +63,7 @@
 
 ;; A TokenReader (during table construction) is one of
 ;; - (cons Symbol (Listof TExpr))
-;; - (cons '#:apply Nat (Listof TExpr)) -- Nat is index into value table
+;; - (cons '#:apply Symbol Nat (Listof TExpr)) -- Nat is index into value table
 ;; where TExpr = Nat | (list Datum) -- a stack index or a literal value.
 
 
@@ -159,8 +159,11 @@
              #:attr mkast (lambda (nt? venv)
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
                             (record-disappeared-uses #'re)
-                            (let ([re (intern-value! #'re)])
-                              (telem ($ t.ast) (list* '#:apply re (map-apply ($ arg.mkast) venv))))))
+                            (let* ([re (free-id-table-ref! (intern-table) #'re #'re)]
+                                   [re-index (add-value! re)])
+                              (telem ($ t.ast)
+                                     (list* '#:apply (syntax-e re) re-index
+                                            (map-apply ($ arg.mkast) venv))))))
     (pattern (~seq :t/nt)))
   (define-syntax-class texpr #:attributes (mkast)
     #:description "token-function argument"
@@ -430,7 +433,7 @@
     [(telem t '(default)) t]
     [(telem t #f) t]
     [(telem t (list tr)) (list t tr)]
-    [(telem t (list* '#:apply proc args)) (list* t '#:apply (object-name proc) args)]
+    [(telem t (list* '#:apply sym index args)) (list* t '#:apply sym args)]
     [(telem t tr) (list t tr)]))
 
 (define debug-consistent #f)
@@ -652,7 +655,7 @@
     (cond [(symbol? (car tr))
            (tz peek? (car tr) (get-token-args (cdr tr) stack))]
           [(eq? (car tr) '#:apply)
-           (apply->token (vector-ref vals (cadr tr)) (get-token-args (cddr tr) stack))]
+           (apply->token (vector-ref vals (caddr tr)) (get-token-args (cdddr tr) stack))]
           [else (error 'lr0-parse "bad tr: ~e" tr)]))
   (define (get-token-args args stack)
     (for/list ([arg (in-list args)])
