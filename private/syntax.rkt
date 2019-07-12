@@ -133,8 +133,26 @@
       (for/list ([tvar (in-list tok-vars)] [vvar (in-list (reverse venv))] #:when (identifier? vvar))
         #`[#,vvar (token-variable (quote-syntax #,vvar) (quote-syntax #,tvar))]))
     #`(lambda #,tok-vars (letrec-syntax #,bindings #,expr)))
+
+  (define (parse-grammar start defs #:context ctx)
+    (syntax-parse (cons start defs)
+      #:context ctx
+      [(start:symbol d:ntdef ...)
+       (define (nt? s) (member s ($ d.nt.ast)))
+       (unless (nt? ($ start.ast)) (wrong-syntax #'start "expected nonterminal symbol"))
+       (parameterize ((intern-table (make-free-id-table)) (value-table (make-hash)))
+         (define defs (map-apply ($ d.mkast) nt?))
+         (grammar ($ start.ast) defs (index-hash->vector (value-table))))]))
+
   (void))
 
+(define-syntax DGrammar
+  (syntax-parser
+    [(_ #:start start def ...)
+     (datum->expression (parse-grammar #'start #'(def ...) #:context this-syntax)
+                        (lambda (v) (cond [(syntax? v) v] [else #f])))]))
+
+#;
 (define-syntax DGrammar
   (syntax-parser
     [(_ #:start start:symbol d:ntdef ...)
