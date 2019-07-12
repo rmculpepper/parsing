@@ -10,10 +10,6 @@
 
 ;; ============================================================
 
-(define grammar% lr-parser%)
-
-;; ============================================================
-
 #|
 (eprintf "\nExample 1:\n")
 (define g1
@@ -107,14 +103,13 @@
 ;; ----------------------------------------
 
 (eprintf "\nExample d1:\n")
-(define d1
-  (DGrammar
+(define dg1
+  (lr-parser
    #:start Message
    [Message [([msg1 #:read MsgByte] [len int4 #:read Int4] [data data #:read (read-data len)])
              #:> (list 1 len data)]
             [([msg2 #:read MsgByte] [d data #:read (read-data '8)])
              #:> (list 2 d)]]))
-(define dg1 (new grammar% (g d1)))
 (send dg1 print)
 
 (define sd1a '((msg1) (int4 4)))
@@ -133,14 +128,13 @@
 ;; ----------------------------------------
 
 (eprintf "\nExample d2:\n")
-(define d2
-  (DGrammar
+(define dg2
+  (lr-parser
    #:start Phrase
    [Phrase [([p Phrase] #\space [w Word]) #:> (append p (list w))]
            [([w Word]) #:> (list w)]]
    [Word [([c letter]) #:> (list c)]
          [([c letter] [w Word]) #:> (cons c w)]]))
-(define dg2 (new grammar% (g d2)))
 (send dg2 print)
 
 (define (d2-tokenizer str)
@@ -155,13 +149,12 @@
 ;; ----------------------------------------
 
 (eprintf "\nExample d3:\n")
-(define d3
-  (DGrammar
+(define dg3
+  (lr-parser
    #:start Settings
    [Settings [([ss Settings] [#\; #:read char] [s Setting]) #:> (append ss (list s))]
              [([s Setting]) #:> (list s)]]
    [Setting [([c letter #:read char] [#\= #:read char] [w word]) #:> (list c w)]]))
-(define dg3 (new grammar% (g d3)))
 (send dg3 print)
 
 (define (d3-tokenizer str)
@@ -181,12 +174,11 @@
 ;; ----------------------------------------
 
 (eprintf "\nExample d4:\n")
-(define d4
-  (DGrammar
+(define dg4
+  (lr-parser
    #:start S
    [S [([m byte] [#t #:apply (zero? m)]) #:> 'none]
       [([n byte] [#f #:apply (zero? n)] [v byte]) #:> v]]))
-(define dg4 (new grammar% (g d4)))
 (send dg4 print)
 
 (define (d4-tokenizer bstr)

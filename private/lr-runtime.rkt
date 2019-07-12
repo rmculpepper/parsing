@@ -1,10 +1,5 @@
 #lang racket/base
 (require racket/match
-         racket/class
-         racket/list
-         racket/pretty
-         "../util/misc.rkt"
-         "grammar-rep.rkt"
          "common.rkt"
          "lr-common.rkt")
 (provide (all-defined-out))

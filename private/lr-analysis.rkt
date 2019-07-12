@@ -259,3 +259,4 @@
     ))
 
 (define LR% (LR-mixin grammar-base%))
+(define (make-LR g) (new LR% (g g)))

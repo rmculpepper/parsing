@@ -1,31 +1,42 @@
 #lang racket/base
-(require racket/match
+(require (for-syntax racket/base
+                     racket/class
+                     syntax/parse
+                     "util/datum-to-expr.rkt"
+                     "private/lr-analysis.rkt")
          racket/class
-         racket/list
-         racket/pretty
-         racket/set
-         "util/misc.rkt"
-         "private/grammar-rep.rkt"
+         racket/lazy-require
          "private/common.rkt"
          "private/syntax.rkt"
-         "private/base-analysis.rkt"
-         "private/lr-analysis.rkt"
          "private/lr-runtime.rkt")
 (provide (all-defined-out)
-         (all-from-out "private/common.rkt")
-         (all-from-out "private/syntax.rkt")
-         (all-from-out "private/base-analysis.rkt")
-         (all-from-out "private/lr-analysis.rkt"))
+         (all-from-out "private/common.rkt"))
+
+(lazy-require
+ ["private/lr-analysis.rkt" (make-LR)])
+
+(define-syntax (lr-parser stx)
+  (syntax-parse stx
+    [(_ #:start start def ...)
+     (define g (parse-grammar #'start #'(def ...) #:context stx))
+     (define pg (new LR% (g g)))
+     (define pstates (send pg get-pstates))
+     (define vals-expr (datum->expression (send pg get-vals) (lambda (v) (if (syntax? v) v #f))))
+     (with-syntax ([g g]
+                   [pstates (send pg get-pstates)]
+                   [vals-expr vals-expr])
+       #'(make-lr-parser (quote pstates) vals-expr (quote g)))]))
 
 (define lr-parser%
   (class object%
-    (init-field g)
+    (init-field pstates vals g)
     (super-new)
-
-    (define pg (new LR% (g g)))
-
     (define/public (parse get-token)
-      (lr-parse (send pg get-pstates) (send pg get-vals) get-token))
-
+      (lr-parse pstates vals get-token))
     (define/public (print)
-      (send pg print))))
+      (define rt (make-LR g))
+      (send rt print))
+    ))
+
+(define (make-lr-parser pstates vals g)
+  (new lr-parser% (pstates pstates) (vals vals) (g g)))

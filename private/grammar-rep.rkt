@@ -61,4 +61,4 @@
 ;;   Msg -> [f Flag] [true  : (has-X-bit? f)] X Y
 ;;   Msg -> [f Flag] [false : (has-X-bit? f)] Y
 
-(define EOF (string->uninterned-symbol "EOF"))
+(define EOF (string->unreadable-symbol "EOF"))

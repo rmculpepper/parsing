@@ -7,7 +7,7 @@
                      "../util/datum-to-expr.rkt"
                      "grammar-rep.rkt")
          "common.rkt")
-(provide (all-defined-out))
+(provide (all-defined-out) (for-syntax (all-defined-out)))
 
 ;; In grammar specification, an Element is one of
 ;; - [name NT]
@@ -151,14 +151,3 @@
     [(_ #:start start def ...)
      (datum->expression (parse-grammar #'start #'(def ...) #:context this-syntax)
                         (lambda (v) (cond [(syntax? v) v] [else #f])))]))
-
-#;
-(define-syntax DGrammar
-  (syntax-parser
-    [(_ #:start start:symbol d:ntdef ...)
-     (define (nt? s) (member s ($ d.nt.ast)))
-     (unless (nt? ($ start.ast)) (wrong-syntax #'start "expected nonterminal symbol"))
-     (parameterize ((intern-table (make-free-id-table)) (value-table (make-hash)))
-       (define defs (map-apply ($ d.mkast) nt?))
-       (datum->expression (grammar ($ start.ast) defs (index-hash->vector (value-table)))
-                          (lambda (v) (cond [(syntax? v) v] [else #f]))))]))
