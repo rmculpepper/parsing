@@ -79,8 +79,8 @@
 ;; Example with LR0 (and SLR?) shift/reduce conflict
 (define-grammar g5
   #:start E
-  [E [(a) #:auto]
-     [(E op E) #:auto]])
+  [E [(a) #:> $1]
+     [(E op E) #:> (list $1 $2 $3)]])
 (define gg5 (lr-parser #:grammar g5))
 (send gg5 print)
 

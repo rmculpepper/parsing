@@ -1,5 +1,6 @@
 #lang racket/base
 (require racket/match
+         racket/list
          "common.rkt"
          "lr-common.rkt")
 (provide (all-defined-out))
@@ -78,3 +79,180 @@
 
 (define (token-name? v)
   (or (symbol? v) (exact-integer? v) (boolean? v) (char? v)))
+
+;; ============================================================
+
+;; A TStack is one of
+;; - null
+;; - (cons X TStack)
+;; - (TJoin (NonemptyListof TStack)) -- TJoin should not contain TJoin child
+(struct TJoin (stacks) #:prefab)
+
+;; tstack-look : TStack Nat -> (NonemptyListof TStack)
+;; Returns list of tstacks, each of which starts with n conses.
+(define (tstack-look tsk n)
+  (cond [(zero? n) (list tsk)]
+        [else (match tsk
+                ['() (error 'tstack-look "empty stack")]
+                [(cons x tsk*)
+                 (for/list ([tail (in-list (tstack-look tsk* (sub1 n)))])
+                   (cons x tail))]
+                [(TJoin tsks*)
+                 (append* (for/list ([tsk* (in-list tsks*)]) (tstack-look tsk* n)))])]))
+
+(define (with-tstack-look tsk n k)
+  ;; (eprintf "with-tstack-look : ~s, ~v\n" n tsk)
+  (let loop ([tsk tsk] [n n] [acc null])
+    (cond [(zero? n) (apply k (reverse (cons tsk acc)))]
+          [else (match tsk
+                  ['() (error 'with-tstack-look "empty stack")]
+                  [(cons x tsk*)
+                   (loop tsk* (sub1 n) (cons x acc))]
+                  [(TJoin tsks*)
+                   (for ([tsk* (in-list tsks*)]) (loop tsk* n acc))])])))
+
+;; tstack-join : (NonemptyListof TStack) -> TStack
+(define (tstack-join tsks) (if (singleton? tsks) (car tsks) (tstack-join* tsks)))
+
+(define (tstack-join* tsks)
+  (define join-tsks (filter TJoin? tsks))
+  (define cons-tsks (filter cons? tsks))
+  (define null-tsks (filter null? tsks))
+  (cond [(pair? cons-tsks)
+         (define cons-tsk* (tstack-join/cons (group-by car cons-tsks)))
+         (tjoin (cons cons-tsk* (append* null-tsks (map TJoin-stacks join-tsks))))]
+        [else (tjoin (append* null-tsks (map TJoin-stacks join-tsks)))]))
+
+(define (tstack-join/cons cons-groups)
+  (tjoin (for/list ([group (in-list cons-groups)])
+           (cond [(singleton? group) (car group)]
+                 [else (cons (caar group) (tstack-join (map cdr group)))]))))
+
+(define (tjoin tsks) (if (singleton? tsks) (car tsks) (TJoin tsks)))
+
+(define (singleton? x) (and (pair? x) (null? (cdr x))))
+
+#|
+(define (check-state-at-top? who tsk)
+  (with-tstack-look tsk 1
+    (lambda (st tsk*) (unless (pstate? st) (error who "top of stack is not state: ~v" tsk)))))
+(define (check-value-at-top? who tsk)
+  (unless (null? tsk)
+    (with-tstack-look tsk 1
+      (lambda (st tsk*) (unless (pair? st) (error who "top of stack is not value: ~v" tsk))))))
+|#
+
+;; ----------------------------------------
+
+(define (glr-parse pstates vals tz #:mode [mode 'complete])
+  (define DEBUG? #f)
+  (define-syntax-rule (push! var value) (set! var (cons value var)))
+
+  (define (get-next-token tr)
+    ;; FIXME: for now, just support no-argument token-readers
+    (match tr
+      [(cons (? symbol? tk) '()) (tz #f tk null)]
+      [_ (error 'glr-parse "unsupported token reader: ~e" tr)]))
+
+  (define failed null) ;; mutated; (Listof TStack)
+  (define ready null) ;; mutated; (Listof TStack)
+  (define done null) ;; mutated; (Listof Result)
+
+  ;; run-until-shift : runs and adds to ready
+  (define (run-until-shift tsk)
+    ;;(check-state-at-top? 'run-until-shift/1 tsk)
+    (with-tstack-look tsk 1
+      (lambda (st tsk*)
+        (when DEBUG? (eprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st)))
+        (cond [(and (eq? (pstate-accept st) 'true))
+               ;; we got here by a shift; discard shift and return state
+               ;;(check-value-at-top? 'run-until-shift/2 tsk*)
+               (with-tstack-look tsk* 3
+                 (lambda (v1 s2 v3 tsk**) (push! done (tok-v v3))))]
+              [(and (eq? (pstate-accept st) 'virtual) (memq mode '(first-done)))
+               ;;(check-value-at-top? 'run-until-shift/3 tsk*)
+               ;; we got here by a goto; result is first value
+               (with-tstack-look tsk* 1
+                 (lambda (v1 tsk**) (push! done (tok-v v1))))]
+              #|
+              [(pstate-reduce-lookahead st)
+               => (lambda (reduce-lookahead) ____)]
+              |#
+              [else
+               (for ([red (pstate-reduce st)])
+                 (reduce st tsk* red))
+               (unless (hash-empty? (pstate-shift st))
+                 (push! ready (cons st tsk*)))]))))
+
+  (define (reduce st tsk* red)
+    ;;(check-value-at-top? 'reduce/1 tsk*)
+    (match-define (list nt index arity action) red)
+    (with-tstack-pop-values (cons st tsk*) arity
+      (lambda (tsk** args)
+        ;;(check-state-at-top? 'reduce/2 tsk**)
+        (define value (tok nt (apply (vector-ref vals action) args)))
+        (when DEBUG? (eprintf "REDUCE: ~v\n" value))
+        (goto value tsk**))))
+
+  ;; convention:
+  ;; - tsk, tsk**, etc   -- TStack with a state index at top
+  ;; - tsk*, tsk***, etc -- TStack with a token at top
+
+  (define (shift stacks)
+    (define tr (pstates-consistent-tr (map car stacks)))
+    (define next-tok (get-next-token tr))
+    (for ([stack (in-list stacks)])
+      (match-define (cons st tsk*) stack)
+      ;;(check-value-at-top? 'shift/1 tsk*)
+      (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
+             => (lambda (next-state)
+                  (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
+                  (run-until-shift (list* (vector-ref pstates next-state) next-tok st tsk*)))]
+            ;; Accept pre-parsed non-terminals from the lexer too.
+            [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
+             => (lambda (next-state)
+                  (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
+                  (run-until-shift (list* (vector-ref pstates next-state) next-tok st tsk*)))]
+            [else (push! failed (list* next-tok st tsk*))])))
+
+  (define (goto reduced tsk)
+    (with-tstack-look tsk 1
+      (lambda (st tsk*)
+        ;;(check-value-at-top? 'goto/1 tsk*)
+        (when DEBUG? (eprintf "RETURN VIA #~s\n" (pstate-index st)))
+        (define next-state (hash-ref (pstate-goto st) (car reduced)))
+        (when DEBUG? (eprintf "GOTO ~v\n" next-state))
+        (run-until-shift (list* (vector-ref pstates next-state) reduced st tsk*)))))
+
+  (define (run-all-shifts)
+    (when DEBUG? (eprintf "\n==== STEP ====\n"))
+    (define ready* ready)
+    (set! ready null)
+    (when #t (set! failed null))
+    (shift ready*))
+
+  (run-until-shift (list (vector-ref pstates 0)))
+  (let loop ()
+    (cond [(and (memq mode '(first-done)) (pair? done)) done]
+          [(null? ready) done]
+          [else (run-all-shifts) (loop)])))
+
+;; FIXME: in GLR, if token arguments, *values* must be consistent, not just exprs
+;; For now, just disallow parameters.
+(define (pstates-consistent-tr states [fail #f])
+  (define proper-states (filter pstate-tr states)) ;; ignore polymorphic
+  (match (group-by pstate-tr proper-states)
+    [(list) #f]
+    [(list group)
+     (define tr (pstate-tr (car group)))
+     (match tr [(list (? symbol?)) tr] [_ (error 'glr-parse "unsupported token reader: ~e" tr)])]
+    [groups
+     (define trs (map pstate-tr (map car groups)))
+     (if fail (fail trs) (error 'glr-parse "ambiguous token reader\n  candidates: ~e" trs))]))
+
+(define (with-tstack-pop-values tsk arity k)
+  ;;(check-state-at-top? 'with-stack-pop-values tsk)
+  (let loop ([tsk tsk] [arity arity] [acc null])
+    (cond [(zero? arity) (k tsk acc)]
+          [else (with-tstack-look tsk 2
+                  (lambda (s1 v2 tsk**) (loop tsk** (sub1 arity) (cons v2 acc))))])))

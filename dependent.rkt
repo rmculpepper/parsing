@@ -38,6 +38,8 @@
     (super-new)
     (define/public (parse get-token)
       (lr-parse pstates vals get-token))
+    (define/public (parse* get-token)
+      (glr-parse pstates vals get-token #:mode 'first-done))
     (define/public (print)
       (define rt (make-LR g))
       (send rt print))
