@@ -27,4 +27,7 @@
 (define (ok-terminal? v)
   (or (symbol? v) (char? v) (boolean? v) (exact-integer? v)))
 
-;; The TokenReader type is defined by the parser framework.
+;; A TokenReader (during table construction) is one of
+;; - (cons Symbol (Listof TExpr))
+;; - (cons '#:apply Symbol Nat (Listof TExpr)) -- Nat is index into value table
+;; where TExpr = Nat | (list Datum) -- a stack index or a literal value.
