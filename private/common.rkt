@@ -1,7 +1,7 @@
 #lang racket/base
 (require racket/match
          "grammar-rep.rkt")
-(provide (all-defined-out))
+(provide (all-defined-out) EOF)
 
 ;; ============================================================
 
@@ -24,7 +24,6 @@
     [(cons _ v) v]
     [(? ok-terminal? t) (error who "token has no payload\n  token: ~e" t)]))
 
-(define EOF (string->uninterned-symbol "EOF"))
 (define EOF-tok EOF)
 
 ;; ============================================================
