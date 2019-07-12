@@ -127,8 +127,8 @@
        [(read-data) (tok 'data (car args))]
        [else (if (pair? toks) (begin0 (apply tok (car toks)) (set! toks (cdr toks))) EOF-tok)]))))
 
-(send dg1 lr0-parse (d1-tokenizer sd1a))
-(send dg1 lr0-parse (d1-tokenizer sd1b))
+(send dg1 parse (d1-tokenizer sd1a))
+(send dg1 parse (d1-tokenizer sd1b))
 
 ;; ----------------------------------------
 
@@ -150,7 +150,7 @@
      (get-char-token in #:token-name 'letter #:special '(#\space)))))
 
 (define sd2a "hello world how are you today")
-(send dg2 lr0-parse (d2-tokenizer sd2a))
+(send dg2 parse (d2-tokenizer sd2a))
 
 ;; ----------------------------------------
 
@@ -173,7 +173,7 @@
        [else (get-string-token in #:token-name 'word #:delimiters '(#\;))]))))
 
 (define sd3a "h=hello;w=world;m=;g=how are you today")
-(send dg3 lr0-parse (d3-tokenizer sd3a))
+(send dg3 parse (d3-tokenizer sd3a))
 
 ;; IDEA: make char literal have TokenKind 'char by default
 ;; IDEA: have integer literal have TokenKind 'integer by default
@@ -199,5 +199,5 @@
 
 (define sd4a (bytes 1 42))
 (define sd4b (bytes 0))
-(send dg4 lr0-parse (d4-tokenizer sd4a))
-(send dg4 lr0-parse (d4-tokenizer sd4b))
+(send dg4 parse (d4-tokenizer sd4a))
+(send dg4 parse (d4-tokenizer sd4b))

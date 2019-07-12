@@ -582,9 +582,9 @@
     (define/public (get-pstates) pstates)
     (define/public (get-pconflicts) pconflicts)
 
-    (define/public (lr0-parse get-token)
+    (define/public (parse get-token)
       ;; FIXME: check for conflicts!
-      (lr0-parse* pstates vals get-token))
+      (lr-parse pstates vals get-token))
 
     ;; ========================================
 
@@ -650,14 +650,14 @@
 (define (token-name? v)
   (or (symbol? v) (exact-integer? v) (boolean? v) (char? v)))
 
-(define (lr0-parse* states vals tz)
+(define (lr-parse states vals tz)
   (define DEBUG? #f)
   (define (get-token peek? tr stack)
     (cond [(symbol? (car tr))
            (tz peek? (car tr) (get-token-args (cdr tr) stack))]
           [(eq? (car tr) '#:apply)
            (apply->token (vector-ref vals (caddr tr)) (get-token-args (cdddr tr) stack))]
-          [else (error 'lr0-parse "bad tr: ~e" tr)]))
+          [else (error 'lr-parse "bad tr: ~e" tr)]))
   (define (get-token-args args stack)
     (for/list ([arg (in-list args)])
       (match arg
@@ -702,7 +702,7 @@
           [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
            => (lambda (next-state)
                 (loop (list* next-state next-tok stack)))]
-          [else (error 'lr0-parse "next = ~v, state = ~v" next-tok (car stack))]))
+          [else (error 'lr-parse "next = ~v, state = ~v" next-tok (car stack))]))
 
   (define (goto reduced stack)
     (define st (vector-ref states (car stack)))
