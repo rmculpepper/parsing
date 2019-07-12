@@ -35,15 +35,14 @@
                 (case accept
                   [(true) (tok-v (cadr (cddr stack)))]
                   [(virtual) (tok-v (cadr stack))]))]
-          [(pstate-reduce-lookahead st)
-           => (lambda (reduce-lookahead)
+          [(pstate-lookahead st)
+           => (lambda (lookahead)
                 (define next-tok (get-token #t (pstate-tr st) stack))
-                (cond [(hash-ref reduce-lookahead (tok-t next-tok) #f)
-                       => (lambda (red) (reduce st stack red))]
+                (cond [(hash-ref lookahead (tok-t next-tok) #f)
+                       => (lambda (reds) (reduce st stack (car reds)))]
                       [else (shift st stack)]))]
-          [(pair? (pstate-reduce st)) ;; (FIXME: assumes no conflicts!)
+          [(pair? (pstate-reduce st))
            (reduce st stack (car (pstate-reduce st)))]
-          ;; otherwise, shift state (FIXME: assumes no conflicts!)
           [else (shift st stack)]))
 
   (define (reduce st stack red)
@@ -184,8 +183,8 @@
                (with-tstack-look tsk* 1
                  (lambda (v1 tsk**) (push! done (tok-v v1))))]
               #|
-              [(pstate-reduce-lookahead st)
-               => (lambda (reduce-lookahead) ____)]
+              [(pstate-lookahead st)
+               => (lambda (lookahead) ____)]
               |#
               [else
                (for ([red (pstate-reduce st)])

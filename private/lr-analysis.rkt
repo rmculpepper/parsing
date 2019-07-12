@@ -74,7 +74,7 @@
 (define (telems-consistent-tr elems [fail #f])
   (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
   (match (group-by telem-tr proper-elems)
-    [(list) #f]
+    [(list) '(default)]
     [(list group)
      (telem-tr (car group))]
     [groups
@@ -139,22 +139,6 @@
         (for/fold ([h h]) ([(elem st2) (in-hash (state-edges st1))])
           (hash-update h st2 (lambda (h*) (hash-cons h* elem st1)) (hash)))))
 
-    (define lr0-conflicts
-      (let ()
-        (define (shift-state? state)
-          (for/or ([sym (in-hash-keys (state-edges state))]) (telem? sym)))
-        (define (reduce-state? state)
-          (for/or ([lrp (in-list state)])
-            (lrprod-dot-final? lrp)))
-        (append*
-         (for/list ([state (in-states)])
-           (append
-            (if (and (shift-state? state) (reduce-state? state))
-                `((shift-reduce ,state)) null)
-            (if (< 1 (for/sum ([lrp (in-list state)])
-                       (if (lrprod-dot-final? lrp) 1 0)))
-                `((reduce-reduce ,state)) null))))))
-
     ;; ========================================
 
     (define state-index-h
@@ -166,15 +150,15 @@
     (define/private (state-index state) (hash-ref state-index-h state))
     (define/private (state-count) (hash-count state-index-h))
 
-    (define/private (make-pstates/conflicts)
-      (define conflicts null) ;; mutated, (Listof ...)
-      (define pstates (make-vector (state-count)))
+    ;; ========================================
+
+    (define/private (make-pstates)
       (define (state->pstate st index)
         (define label (lr-state-label st))
         (define shift (for/hash ([(elem st) (in-hash (state-edges st))] #:when (telem? elem))
-                        (values elem (state-index st))))
+                        (values (telem-t elem) (state-index st))))
         (define goto (for/hash ([(elem st) (in-hash (state-edges st))] #:when (ntelem? elem))
-                       (values elem (state-index st))))
+                       (values (ntelem-nt elem) (state-index st))))
         ;; FIXME: intern shift, goto?
         (define reduce
           (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))
@@ -184,42 +168,53 @@
           (cond [(equal? (map reduction-nt reduce) (list START)) 'true]
                 [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
                 [else #f]))
-        (define reduce-lookahead (slr-reduce-lookahead st index shift reduce))
+        (define lookahead/e
+          (cond [(null? reduce) #f]
+                [(and (hash-empty? shift) (<= (length reduce) 1)) #f]
+                [else (slr-lookahead reduce)]))
         (define treader
           (telems-consistent-tr
-           (append (hash-keys shift) (if reduce-lookahead (hash-keys reduce-lookahead) null))))
-        (define shift* (for/hash ([(elem st) (in-hash shift)]) (values (telem-t elem) st)))
-        (define goto* (for/hash ([(elem st) (in-hash goto)]) (values (ntelem-nt elem) st)))
-        (define reduce-lookahead*
-          (and reduce-lookahead
-               (for/hash ([(elem red) (in-hash reduce-lookahead)])
+           (append (filter telem? (hash-keys (state-edges st)))
+                   (if lookahead/e (hash-keys lookahead/e) null))))
+        (define lookahead
+          (and lookahead/e
+               (for/hash ([(elem red) (in-hash lookahead/e)])
                  (values (telem-t elem) red))))
-        (pstate index label treader shift* reduce goto* accept reduce-lookahead*))
-      (define (slr-reduce-lookahead st index shift reduce)
-        (cond [(null? reduce) #f]
-              [(and (hash-empty? shift) (<= (length reduce) 1)) #f]
-              [else
-               (define reduce-lookahead
-                 (for/fold ([h (hash)]) ([red (in-list reduce)])
-                   (match-define (reduction red-nt _ _ _) red)
-                   (define follows (nt-follow red-nt))
-                   (for/fold ([h h]) ([t (in-list follows)])
-                     (cond [(hash-ref shift t #f)
-                            (begin (push! conflicts (list t 'shift red)) h)]
-                           [(hash-ref h t #f)
-                            (begin (push! conflicts (list t (hash-ref h t) red)) h)]
-                           [else (hash-set h t red)]))))
-               (when (pair? conflicts)
-                 (void))
-               reduce-lookahead]))
+        (pstate index label treader shift reduce goto accept lookahead))
+      (define pstates (make-vector (state-count)))
       (for ([(st index) (in-hash state-index-h)])
         (vector-set! pstates index (state->pstate st index)))
       ;; FIXME: if lookaheads, should be consistent with goto successors (??)
-      (values pstates conflicts))
+      pstates)
 
-    (define-values (pstates pconflicts) (make-pstates/conflicts))
+    (define/public (pstate-lr0-conflicts st)
+      (match-define (pstate index _ _ shift reduce _ _ _) st)
+      (cond [(null? reduce) null]
+            [(and (hash-empty? shift) (<= (length reduce) 1)) null]
+            [(hash-empty? shift) (list (conflict index #f #f reduce))]
+            [else (list (conflict index #f #t reduce))]))
+
+    (define/public (pstate-conflicts st)
+      (match-define (pstate index _ _ shift _ _ _ lookahead) st)
+      (filter values
+              (for/list ([(t reds) (in-hash (or lookahead (hash)))])
+                (define shift-st (hash-ref shift t #f))
+                (and (> (+ (length reds) (if shift-st 1 0)) 1)
+                     (conflict index t shift-st reds)))))
+
+    (define/public (slr-lookahead reduce) ;; -> Hash[Elem => (Listof Reduction)]
+      (for/fold ([h (hash)]) ([red (in-list reduce)])
+        (match-define (reduction red-nt _ _ _) red)
+        (define follows (nt-follow red-nt))
+        (for/fold ([h h]) ([t (in-list follows)])
+          (hash-cons h t red))))
+
+    (define pstates (make-pstates))
     (define/public (get-pstates) pstates)
-    (define/public (get-pconflicts) pconflicts)
+    (define/public (get-lr0-conflicts)
+      (append* (for/list ([st (in-vector pstates)]) (pstate-lr0-conflicts st))))
+    (define/public (get-conflicts)
+      (append* (for/list ([st (in-vector pstates)]) (pstate-conflicts st))))
 
     ;; ========================================
 
@@ -229,12 +224,14 @@
         (printf "LR0 States:\n")
         ;; (pretty-print state-goto-h)
         (pretty-print pstates))
-      (when (pair? lr0-conflicts)
-        (printf "LR0 Conflicts:\n")
-        (pretty-print lr0-conflicts))
-      (when (pair? pconflicts)
-        (printf "SLR Conflicts:\n")
-        (pretty-print pconflicts)))
+      (let ([lr0-conflicts (get-lr0-conflicts)])
+        (when (pair? lr0-conflicts)
+          (printf "LR0 Conflicts:\n")
+          (pretty-print lr0-conflicts)))
+      (let ([conflicts (get-conflicts)])
+        (when (pair? conflicts)
+          (printf "SLR Conflicts:\n")
+          (pretty-print conflicts))))
 
     (define/public (print-states [edges? #t])
       (for ([st pstates]) (print-state st edges?)))
