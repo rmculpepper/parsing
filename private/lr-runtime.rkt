@@ -5,13 +5,19 @@
          "lr-common.rkt")
 (provide (all-defined-out))
 
+;; A StateTopStack is (cons PState ValueTopStack)
+;; A ValueTopStack is null or (cons Token StateTopStack)
+;; -- note, reduced nonterminals are also stored as Tokens
+
 (define (lr-parse states vals tz)
   (define DEBUG? #f)
+  (define (get-state n) (vector-ref states n))
+  (define (get-val n) (vector-ref vals n))
   (define (get-token peek? tr stack)
     (cond [(symbol? (car tr))
            (tz peek? (car tr) (get-token-args (cdr tr) stack))]
           [(eq? (car tr) '#:apply)
-           (apply->token (vector-ref vals (caddr tr)) (get-token-args (cdddr tr) stack))]
+           (apply->token (get-val (caddr tr)) (get-token-args (cdddr tr) stack))]
           [else (error 'lr-parse "bad tr: ~e" tr)]))
   (define (get-token-args args stack)
     (for/list ([arg (in-list args)])
@@ -21,8 +27,8 @@
          (tok-v (list-ref stack (+ index index -1)))])))
 
   (define (loop stack)
-    (define st (vector-ref states (car stack)))
-    (when DEBUG? (eprintf "\nSTATE = #~v, ~s\n" (car stack) (pstate-label st)))
+    (define st (car stack))
+    (when DEBUG? (eprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st)))
     (cond [(pstate-accept st)
            => (lambda (accept)
                 ;; Did we get here by a shift or a goto?
@@ -43,7 +49,7 @@
   (define (reduce st stack red)
     (match-define (list nt index arity action) red)
     (define-values (args stack*) (pop-values arity stack))
-    (define value (tok nt (apply (vector-ref vals action) args))) ;; (list* nt index args)
+    (define value (tok nt (apply (get-val action) args)))
     (when DEBUG? (eprintf "REDUCE: ~v\n" value))
     (goto value stack*))
 
@@ -52,20 +58,21 @@
     (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
            => (lambda (next-state)
                 (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
-                (loop (list* next-state next-tok stack)))]
+                (loop (list* (get-state next-state) next-tok stack)))]
           ;; Accept pre-parsed non-terminals from the lexer too.
           [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
            => (lambda (next-state)
-                (loop (list* next-state next-tok stack)))]
+                (loop (list* (get-state next-state) next-tok stack)))]
           [else (error 'lr-parse "next = ~v, state = ~v" next-tok (car stack))]))
 
   (define (goto reduced stack)
-    (define st (vector-ref states (car stack)))
-    (when DEBUG? (eprintf "RETURN VIA #~s\n" (car stack)))
+    (define st (car stack))
+    (when DEBUG? (eprintf "RETURN VIA #~s\n" (pstate-index st)))
     (define next-state (hash-ref (pstate-goto st) (car reduced)))
     (when DEBUG? (eprintf "GOTO ~v\n" next-state))
-    (loop (list* next-state reduced stack)))
-  (loop (list 0)))
+    (loop (list* (get-state next-state) reduced stack)))
+
+  (loop (list (get-state 0))))
 
 (define (pop-values arity stack) ;; produces values in original order
   (let loop ([arity arity] [stack stack] [acc null])
@@ -144,9 +151,11 @@
 
 ;; ----------------------------------------
 
-(define (glr-parse pstates vals tz #:mode [mode 'complete])
+(define (glr-parse states vals tz #:mode [mode 'complete])
   (define DEBUG? #f)
   (define-syntax-rule (push! var value) (set! var (cons value var)))
+  (define (get-state n) (vector-ref states n))
+  (define (get-val n) (vector-ref vals n))
 
   (define (get-next-token tr)
     ;; FIXME: for now, just support no-argument token-readers
@@ -190,7 +199,7 @@
     (with-tstack-pop-values (cons st tsk*) arity
       (lambda (tsk** args)
         ;;(check-state-at-top? 'reduce/2 tsk**)
-        (define value (tok nt (apply (vector-ref vals action) args)))
+        (define value (tok nt (apply (get-val action) args)))
         (when DEBUG? (eprintf "REDUCE: ~v\n" value))
         (goto value tsk**))))
 
@@ -207,12 +216,12 @@
       (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
              => (lambda (next-state)
                   (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
-                  (run-until-shift (list* (vector-ref pstates next-state) next-tok st tsk*)))]
+                  (run-until-shift (list* (get-state next-state) next-tok st tsk*)))]
             ;; Accept pre-parsed non-terminals from the lexer too.
             [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
              => (lambda (next-state)
                   (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
-                  (run-until-shift (list* (vector-ref pstates next-state) next-tok st tsk*)))]
+                  (run-until-shift (list* (get-state next-state) next-tok st tsk*)))]
             [else (push! failed (list* next-tok st tsk*))])))
 
   (define (goto reduced tsk)
@@ -222,7 +231,7 @@
         (when DEBUG? (eprintf "RETURN VIA #~s\n" (pstate-index st)))
         (define next-state (hash-ref (pstate-goto st) (car reduced)))
         (when DEBUG? (eprintf "GOTO ~v\n" next-state))
-        (run-until-shift (list* (vector-ref pstates next-state) reduced st tsk*)))))
+        (run-until-shift (list* (get-state next-state) reduced st tsk*)))))
 
   (define (run-all-shifts)
     (when DEBUG? (eprintf "\n==== STEP ====\n"))
@@ -231,7 +240,7 @@
     (when #t (set! failed null))
     (shift ready*))
 
-  (run-until-shift (list (vector-ref pstates 0)))
+  (run-until-shift (list (get-state 0)))
   (let loop ()
     (cond [(and (memq mode '(first-done)) (pair? done)) done]
           [(null? ready) done]
