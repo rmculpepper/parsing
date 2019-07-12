@@ -30,7 +30,10 @@
     (let* ([h (value-table)] [index (hash-count h)]) (hash-ref! h stx index)))
   (define (intern-value! id)
     (add-value! (free-id-table-ref! (intern-table) id id)))
+
   (define (map-apply fs . xs) (for/list ([f (in-list fs)]) (apply f xs)))
+  (define (mk-$n n) (format-id (current-syntax-context) "$~a" n))
+
   (define-syntax-class ntdef #:attributes (nt nt.ast mkast)
     #:description "nonterminal definition"
     (pattern [nt:symbol rhs:ntrhs ...]
@@ -38,33 +41,46 @@
                             (def ($ nt.ast)
                               (for/list ([rhs-mkast (in-list ($ rhs.mkast))] [index (in-naturals)])
                                 (rhs-mkast ($ nt.ast) index nt?))))))
+
   (define-syntax-class ntrhs #:attributes (mkast)
     (pattern [es:elemseq a:action]
              #:attr mkast (lambda (nt index nt?)
                             (define-values (es-ast venv) (($ es.mkast) nt?))
-                            (define a-ast (($ a.mkast) venv))
+                            (define a-ast (($ a.mkast) nt index venv))
                             (prod nt index es-ast a-ast))))
+
   (define-splicing-syntax-class action #:attributes (mkast)
     #:description "action routine"
+    (pattern (~seq #:auto)
+             #:attr mkast (lambda (nt index venv)
+                            (add-value! #`(mk-auto-action (quote #,nt) (quote #,index)))))
+    (pattern (~seq #:apply proc:expr)
+             #:attr mkast (lambda (nt index venv) (add-value! #'(mk-action proc))))
     (pattern (~seq (~optional #:>) ~! e:expr ...+)
-             #:attr mkast (lambda (venv) (add-value! (wrap-expr #'(let () e ...) venv)))))
+             #:attr mkast (lambda (nt index venv) (add-value! (wrap-expr #'(let () e ...) venv)))))
+
   (define-syntax-class elemseq #:attributes (mkast)
     #:description "element sequence"
     (pattern (e:elem ...)
              #:attr mkast (lambda (nt?)
                             (for/fold ([acc null] [venv null] #:result (values (reverse acc) venv))
-                                      ([e-mkast (in-list ($ e.mkast))] [var (in-list ($ e.name))])
+                                      ([e-mkast (in-list ($ e.mkast))]
+                                       [var (in-list ($ e.name))]
+                                       [index (in-naturals 1)])
                               (values (cons (e-mkast nt? venv) acc)
-                                      (cons var venv))))))
+                                      (cons (or var (mk-$n index)) venv))))))
+
   (define-syntax-class elem #:attributes (name mkast)
     #:description #f
     (pattern :t/nt #:attr name #f)
     (pattern [:name :elem-content])
     (pattern [:elem-content] #:attr name #f))
+
   (define-syntax-class name #:attributes (name)
     #:literals (_)
     (pattern (~and _ ~!) #:attr name #f)
     (pattern x:id #:attr name #'x))
+
   (define-syntax-class t/nt #:attributes (mkast)
     #:description #f
     (pattern s:symbol
@@ -75,6 +91,7 @@
     (pattern t:non-symbol-token-name
              #:attr name #f
              #:attr mkast (lambda (nt? venv) (telem ($ t.ast) '(default)))))
+
   (define-splicing-syntax-class elem-content #:attributes (mkast)
     #:description "element content"
     (pattern (~seq t:token-name #:read tk:symbol)
@@ -97,6 +114,7 @@
                                      (list* '#:apply (syntax-e re) re-index
                                             (map-apply ($ arg.mkast) venv))))))
     (pattern (~seq :t/nt)))
+
   (define-syntax-class texpr #:attributes (mkast)
     #:description "token-function argument"
     #:literals (quote)
@@ -107,10 +125,13 @@
                                 (wrong-syntax #'var "unbound element variable"))))
     (pattern (quote datum)
              #:attr mkast (lambda (venv) (list (syntax->datum #'datum)))))
+
   (define-syntax-class symbol #:attributes (ast)
     (pattern x:id #:attr ast (syntax-e #'x)))
+
   (define-syntax-class token-name #:attributes (ast)
     (pattern (~or :symbol :non-symbol-token-name)))
+
   (define-syntax-class non-symbol-token-name #:attributes (ast)
     (pattern (~and x (~fail #:unless (let ([v (syntax-e #'x)])
                                        (or (char? v) (boolean? v) (exact-integer? v)))))
@@ -145,6 +166,12 @@
          (grammar ($ start.ast) defs (index-hash->vector (value-table))))]))
 
   (void))
+
+(define (mk-action proc)
+  (lambda toks (apply proc (map tok-v (filter tok-has-v? toks)))))
+
+(define (mk-auto-action nt index)
+  (lambda toks (list* nt index (map tok-v (filter tok-has-v? toks)))))
 
 (define-syntax Grammar
   (syntax-parser
