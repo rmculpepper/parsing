@@ -146,7 +146,7 @@
 
   (void))
 
-(define-syntax DGrammar
+(define-syntax Grammar
   (syntax-parser
     [(_ #:start start def ...)
      (datum->expression (parse-grammar #'start #'(def ...) #:context this-syntax)

@@ -1,19 +1,14 @@
 #lang racket/base
 (require racket/class
-         "grammar.rkt"
-         "ll1-parser.rkt")
+         "dependent.rkt")
 (provide (all-defined-out))
 
 ;; ============================================================
 
-(define grammar% (LL1-mixin grammar-base%))
-
-;; ============================================================
-
 (eprintf "\nExample 1:\n")
-(define g1
+(define-grammar g1
   (Grammar
-   Sent
+   #:Start Sent
    [Sent (Clause)
          (Clause conj Sent)]
    [Clause (Nphr Vphr)]
