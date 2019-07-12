@@ -10,6 +10,8 @@
          "lr-common.rkt")
 (provide (all-defined-out))
 
+(define (hash-cons h k v) (hash-set h k (cons v (hash-ref h k null))))
+
 ;; ============================================================
 
 (define START (string->uninterned-symbol "START"))
@@ -17,42 +19,34 @@
 
 (define (lr-adjust-grammar g)
   (match-define (grammar start defs vals) g)
-  (define start-p (prod START 0 (list (ntelem start) EOF-elem) (vector-length vals)))
+  (define start-p (prod START 0 (vector-immutable (ntelem start) EOF-elem) (vector-length vals)))
   (define vals* (list->vector (append (vector->list vals) (list (lambda (s e) s)))))
   (grammar START (cons (def START (list start-p)) defs) vals))
 
 (define DOT (string->uninterned-symbol "◇"))
-(define (DOT? x) (eq? x DOT))
 
-;; An LR0-Item is an Item that contains exactly one DOT symbol.
+;; An LR0-Prod is (cons Nat Prod), where the nat is in [0, (vector-length item)]
+;; and represents the index of the dot in the production's item.
+
+;; An LR0-Item is (cons Nat ElemSequence), where the nat is
+;; in [0, (vector-length item)], indicates the position of the dot.
+
 ;; An LR0-Prod is (prod NT Nat LR0-Item Action)
 
-(define (lritem-elem-after-dot lritem)
-  (let loop ([lritem lritem])
-    (cond [(DOT? (car lritem)) (and (pair? (cdr lritem)) (cadr lritem))]
-          [else (loop (cdr lritem))])))
+(define (prod->initial-lrprod p) (cons 0 p))
 
-(define (lritem-dot-initial? lritem) (DOT? (car lritem)))
-(define (lritem-dot-final? lritem) (DOT? (last lritem)))
-
-(define (prod->initial-lrprod p)
-  (match-define (prod nt index item action) p)
-  (prod nt index (cons DOT item) action))
+(define (lrprod-dot-initial? lrp) (zero? (car lrp)))
+(define (lrprod-dot-not-initial? lrp) (not (lrprod-dot-initial? lrp)))
+(define (lrprod-dot-final? lrp)
+  (match lrp [(cons dotk (prod _ _ item _)) (= dotk (vector-length item))]))
 
 (define (lrprod-elem-after-dot lrp)
-  (lritem-elem-after-dot (prod-item lrp)))
-
-(define (lrprod-dot-initial? lrp) (lritem-dot-initial? (prod-item lrp)))
-(define (lrprod-dot-not-initial? lrp) (not (lrprod-dot-initial? lrp)))
-(define (lrprod-dot-final? lrp) (lritem-dot-final? (prod-item lrp)))
+  (match lrp
+    [(cons dotk (prod _ _ item _))
+     (and (< dotk (vector-length item)) (vector-ref item dotk))]))
 
 (define (lrprod-advance-dot lrp)
-  (match-define (prod nt index lritem action) lrp)
-  (prod nt index
-        (let loop ([lritem lritem])
-          (cond [(DOT? (car lritem)) (list* (cadr lritem) DOT (cddr lritem))]
-                [else (cons (car lritem) (loop (cdr lritem)))]))
-        action))
+  (match lrp [(cons dotk p) (cons (add1 dotk) p)]))
 
 ;; A LR0-State is (Listof LR0-Prod)
 
@@ -62,18 +56,20 @@
           [(null? (cdr base-lrps)) (prod->label (car base-lrps))]
           [else (map prod->label base-lrps)])))
 (define (prod->label lrp)
-  (match lrp [(prod nt index lritem _) (list* nt index '→ (map elem->label lritem))]))
+  (match lrp
+    [(cons dotk (prod nt index item _))
+     (list* nt index '→ (insert-dot dotk (map elem->label (vector->list item))))]))
 (define (elem->label elem)
   (match elem
-    [(? DOT?) elem]
     [(ntelem nt) nt]
     [(telem t '(default)) t]
     [(telem t #f) t]
     [(telem t (list tr)) (list t tr)]
     [(telem t (list* '#:apply sym index args)) (list* t '#:apply sym args)]
     [(telem t tr) (list t tr)]))
-
-(define debug-consistent #f)
+(define (insert-dot k xs)
+  (cond [(zero? k) (cons DOT xs)]
+        [else (cons (car xs) (insert-dot (sub1 k) (cdr xs)))]))
 
 (define (telems-consistent-tr elems [fail #f])
   (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
@@ -83,10 +79,7 @@
      (telem-tr (car group))]
     [groups
      (define kinds (map telem-tr (map car groups)))
-     (set! debug-consistent kinds)
      (if fail (fail kinds) (error 'dep-lr "inconsistent token kinds\n  kinds: ~v" kinds))]))
-
-(define-syntax-rule (push! var elem) (set! var (cons elem var)))
 
 ;; ------------------------------------------------------------
 
@@ -100,6 +93,8 @@
 
     (define/public (get-vals) (grammar-vals g*))
 
+    (define-syntax-rule (push! var elem) (set! var (cons elem var)))
+
     ;; ----------------------------------------
 
     (define nt-lrprods-h
@@ -111,81 +106,85 @@
       (hash-ref nt-lrprods-h nt))
 
     (define/public (lrprod-children lrp)
-      (define dotted-elem (lrprod-elem-after-dot lrp))
       (match (lrprod-elem-after-dot lrp)
         [(ntelem nt) (nt-lrprods nt)]
         [_ null]))
 
-    (define state-h (make-hash)) ;; intern table
-    (define-syntax-rule (in-states) (in-hash-keys state-h))
+    (define state-intern-h (make-hash)) ;; intern table
+    (define/private (intern-state state) (hash-ref! state-intern-h state state))
 
-    (define/public (state-closure lrps)
+    (define/public (kernel->state lrps)
       (define state (list-closure lrps (lambda (lrp) (lrprod-children lrp))))
-      (hash-ref! state-h state (lambda () state)))
+      (intern-state state))
 
-    (define (states-goto-closure state0)
-      (define (state-goto-children state)
-        (define groups ;; Hash[Symbol => (Listof LR0-Prod)]
-          (for/fold ([h (hash)]) ([lrp (in-list state)])
-            (cond [(lrprod-elem-after-dot lrp)
-                   => (lambda (elem)
-                        (hash-set h elem (cons lrp (hash-ref h elem null))))]
-                  [else h])))
-        (for/hash ([(elem lrps) (in-hash groups)])
-          (values elem (state-closure (map lrprod-advance-dot (reverse lrps))))))
-      (closure (list state0) state-goto-children #:worklist hash-values))
+    (define state0 (kernel->state (nt-lrprods start)))
+    (define-syntax-rule (in-states) (in-hash-keys state-intern-h))
 
-    (define state0 (state-closure (nt-lrprods start)))
-    (define state-goto-h (states-goto-closure state0))
+    (define state-edge-h
+      (closure (list state0)
+               (lambda (state)
+                 (define groups ;; Hash[Elem => (Listof LR0-Prod)]
+                   (for/fold ([h (hash)]) ([lrp (in-list state)])
+                     (cond [(lrprod-elem-after-dot lrp)
+                            => (lambda (elem) (hash-cons h elem lrp))]
+                           [else h])))
+                 (for/hash ([(elem lrps) (in-hash groups)])
+                   (values elem (kernel->state (map lrprod-advance-dot (reverse lrps))))))
+               #:worklist hash-values))
+    (define/public (state-edges state) (hash-ref state-edge-h state))
+    (define/public (state-edge state sym) (hash-ref (state-edges state) sym #f))
 
-    (define (shift-state? state)
-      (let ([goto-h (hash-ref state-goto-h state)])
-        (for/or ([sym (in-hash-keys goto-h)]) (telem? sym))))
-    (define (reduce-state? state)
-      (for/or ([lrp (in-list state)])
-        (lrprod-dot-final? lrp)))
-    (define (state-goto state sym)
-      (hash-ref (hash-ref state-goto-h state) sym #f))
+    (define state-pred-h
+      (for/fold ([h (hash)]) ([st1 (in-states)])
+        (for/fold ([h h]) ([(elem st2) (in-hash (state-edges st1))])
+          (hash-update h st2 (lambda (h*) (hash-cons h* elem st1)) (hash)))))
 
     (define lr0-conflicts
-      (append*
-       (for/list ([state (in-states)])
-         (append
-          (if (and (shift-state? state) (reduce-state? state))
-              `((shift-reduce ,state)) null)
-          (if (< 1 (for/sum ([lrp (in-list state)])
-                     (if (lrprod-dot-final? lrp) 1 0)))
-              `((reduce-reduce ,state)) null)))))
+      (let ()
+        (define (shift-state? state)
+          (for/or ([sym (in-hash-keys (state-edges state))]) (telem? sym)))
+        (define (reduce-state? state)
+          (for/or ([lrp (in-list state)])
+            (lrprod-dot-final? lrp)))
+        (append*
+         (for/list ([state (in-states)])
+           (append
+            (if (and (shift-state? state) (reduce-state? state))
+                `((shift-reduce ,state)) null)
+            (if (< 1 (for/sum ([lrp (in-list state)])
+                       (if (lrprod-dot-final? lrp) 1 0)))
+                `((reduce-reduce ,state)) null))))))
 
     ;; ========================================
 
+    (define state-index-h
+      (let ([next-index 0])
+        (define (get-index) (begin0 next-index (set! next-index (add1 next-index))))
+        (closure (list state0)
+                 (lambda (state) (hash-values (state-edges state)))
+                 #:store (lambda (x) (get-index)))))
+    (define/private (state-index state) (hash-ref state-index-h state))
+    (define/private (state-count) (hash-count state-index-h))
+
     (define/private (make-pstates/conflicts)
       (define conflicts null) ;; mutated, (Listof ...)
-      (define next-index 0)
-      (define (get-index)
-        (begin0 next-index (set! next-index (add1 next-index))))
-      (define (next-states st) (hash-values (hash-ref state-goto-h st)))
-      (define state=>index
-        (closure (list state0) next-states #:store (lambda (x) (get-index))))
-      (define pstates (make-vector next-index))
+      (define pstates (make-vector (state-count)))
       (define (state->pstate st index)
         (define label (lr-state-label st))
-        (define shift (for/hash ([(elem st) (in-hash (hash-ref state-goto-h st))]
-                                 #:when (telem? elem))
-                        (values elem (hash-ref state=>index st))))
-        (define goto (for/hash ([(elem st) (in-hash (hash-ref state-goto-h st))]
-                                #:when (ntelem? elem))
-                       (values elem (hash-ref state=>index st))))
+        (define shift (for/hash ([(elem st) (in-hash (state-edges st))] #:when (telem? elem))
+                        (values elem (state-index st))))
+        (define goto (for/hash ([(elem st) (in-hash (state-edges st))] #:when (ntelem? elem))
+                       (values elem (state-index st))))
         ;; FIXME: intern shift, goto?
         (define reduce
           (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))
-            (match-define (prod nt index lritem action) lrp)
-            (list nt index (sub1 (length lritem)) action)))
+            (match-define (cons _ (prod nt index item action)) lrp)
+            (reduction nt index (vector-length item) action)))
         (define accept
-          (cond [(equal? (map car reduce) (list START)) 'true]
+          (cond [(equal? (map reduction-nt reduce) (list START)) 'true]
                 [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
                 [else #f]))
-        (define reduce-lookahead (make-reduce-lookahead st index shift reduce))
+        (define reduce-lookahead (slr-reduce-lookahead st index shift reduce))
         (define treader
           (telems-consistent-tr
            (append (hash-keys shift) (if reduce-lookahead (hash-keys reduce-lookahead) null))))
@@ -196,13 +195,13 @@
                (for/hash ([(elem red) (in-hash reduce-lookahead)])
                  (values (telem-t elem) red))))
         (pstate index label treader shift* reduce goto* accept reduce-lookahead*))
-      (define (make-reduce-lookahead st index shift reduce)
+      (define (slr-reduce-lookahead st index shift reduce)
         (cond [(null? reduce) #f]
               [(and (hash-empty? shift) (<= (length reduce) 1)) #f]
               [else
                (define reduce-lookahead
                  (for/fold ([h (hash)]) ([red (in-list reduce)])
-                   (match-define (list red-nt _ _ _) red)
+                   (match-define (reduction red-nt _ _ _) red)
                    (define follows (nt-follow red-nt))
                    (for/fold ([h h]) ([t (in-list follows)])
                      (cond [(hash-ref shift t #f)
@@ -213,7 +212,7 @@
                (when (pair? conflicts)
                  (void))
                reduce-lookahead]))
-      (for ([(st index) (in-hash state=>index)])
+      (for ([(st index) (in-hash state-index-h)])
         (vector-set! pstates index (state->pstate st index)))
       ;; FIXME: if lookaheads, should be consistent with goto successors (??)
       (values pstates conflicts))

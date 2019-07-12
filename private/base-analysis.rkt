@@ -20,12 +20,12 @@
       (for/list ([i (in-range n)]) (generate start)))
 
     (define/public (generate [want start])
-      (cond [(nt? want)
-             (define rhss (nt-rhss want))
-             (append*
-              (for/list ([sym (list-ref rhss (random (length rhss)))])
-                (generate sym)))]
-            [else `((,want))]))
+      (define rhss (nt-rhss want))
+      (append*
+       (for/list ([elem (in-vector (list-ref rhss (random (length rhss))))])
+         (match elem
+           [(ntelem nt) (generate nt)]
+           [(telem t _) (list t)]))))
 
     ;; ----------------------------------------
 
@@ -41,9 +41,9 @@
     (define nt-nullable-h
       (fixpoint
        (lambda (h)
-         (for/fold ([h h]) ([def defs])
+         (for/fold ([h h]) ([def (in-list defs)])
            (hash-set h (def-nt def)
-                     (for/or ([p (def-rhss def)])
+                     (for/or ([p (in-list (def-rhss def))])
                        (item-nullable? (prod-item p) #:h h)))))
        (hash)))
 
@@ -53,7 +53,7 @@
     (define/public (elem-nullable? elem #:h [h nt-nullable-h])
       (match elem [(ntelem nt) (nt-nullable? nt #:h h)] [_ #f]))
     (define/public (item-nullable? item #:h [h nt-nullable-h])
-      (for/and ([elem item]) (elem-nullable? elem #:h h)))
+      (for/and ([elem (in-vector item)]) (elem-nullable? elem #:h h)))
 
     ;; ----------------------------------------
 
@@ -61,7 +61,7 @@
     (define nt-minlen-h
       (fixpoint
        (lambda (h)
-         (for/fold ([h h]) ([def defs])
+         (for/fold ([h h]) ([def (in-list defs)])
            (hash-set h (def-nt def)
                      (apply min MAX-MINLEN
                             (for/list ([p (def-rhss def)])
@@ -74,7 +74,7 @@
     (define/public (elem-minlen elem #:h [h nt-minlen-h])
       (match elem [(ntelem nt) (nt-minlen nt #:h h)] [_ 1]))
     (define/public (item-minlen item #:h [h nt-minlen-h])
-      (for/sum ([elem item]) (elem-minlen elem #:h h)))
+      (for/sum ([elem (in-vector item)]) (elem-minlen elem #:h h)))
 
     ;; ----------------------------------------
 
@@ -84,7 +84,7 @@
          (for/hash ([def defs])
            (values (def-nt def)
                    (apply set-union '()
-                          (for/list ([p (def-rhss def)])
+                          (for/list ([p (in-list (def-rhss def))])
                             (item-first (prod-item p) #:h h))))))
        (hash)))
 
@@ -94,12 +94,12 @@
     (define/public (elem-first elem #:h [h nt-first-h])
       (match elem [(ntelem nt) (nt-first nt #:h h)] [t (list t)]))
     (define/public (item-first item #:h [h nt-first-h])
-      (let loop ([item item])
-        (match item
-          [(cons elem1 item2)
-           (set-union (elem-first elem1 #:h h)
-                      (if (elem-nullable? elem1) (loop item2) null))]
-          ['() null])))
+      (let loop ([i 0])
+        (cond [(< i (vector-length item))
+               (define elemi (vector-ref item i))
+               (set-union (elem-first elemi #:h h)
+                          (if (elem-nullable? elemi) (loop (add1 i)) null))]
+              [else null])))
 
     ;; ----------------------------------------
 
@@ -109,7 +109,7 @@
          (for/hash ([def defs])
            (values (def-nt def)
                    (apply set-union '()
-                          (for/list ([p (def-rhss def)])
+                          (for/list ([p (in-list (def-rhss def))])
                             (item-final (prod-item p) #:h h))))))
        (hash)))
 
@@ -119,21 +119,22 @@
     (define/public (elem-final elem #:h [h nt-final-h])
       (match elem [(ntelem nt) (nt-final nt #:h h)] [t (list t)]))
     (define/public (item-final item #:h [h nt-final-h])
-      (let loop ([item item])
-        (match item
-          [(cons elem1 item2)
-           (set-union (elem-final elem1 #:h h)
-                      (if (elem-nullable? elem1) (loop item2) null))]
-          ['() null])))
+      (let loop ([i (sub1 (vector-length item))])
+        (cond [(>= i 0)
+               (define elemi (vector-ref item i))
+               (set-union (elem-final elemi #:h h)
+                          (if (elem-nullable? elemi) (loop (sub1 i)) null))]
+              [else null])))
 
     ;; ----------------------------------------
 
     (define nt-follow-h
       (fixpoint
        (lambda (h)
-         (for*/fold ([h h]) ([def defs] [p (def-rhss def)])
+         (for*/fold ([h h]) ([def (in-list defs)] [p (in-list (def-rhss def))])
+           (define item (prod-item p))
            (for/fold ([h h] [follows-this (hash-ref h (def-nt def) null)] #:result h)
-                     ([elem (reverse (prod-item p))])
+                     ([elem (in-list (reverse (vector->list item)))])
              (match elem
                [(ntelem nt)
                 (values (hash-set h nt (set-union (hash-ref h nt null) follows-this))

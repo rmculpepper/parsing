@@ -10,7 +10,7 @@
 ;; A Prod is (prod NT Nat ElemSequence Action)
 (struct prod (nt index item action) #:prefab)
 
-;; An ElemSequence is (Listof Element)
+;; An ElemSequence is (Vectorof Element)
 ;; An Element is one of
 ;; - (ntelem NT)
 ;; - (telem Terminal TokenReader)

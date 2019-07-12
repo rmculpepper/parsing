@@ -47,7 +47,7 @@
           [else (shift st stack)]))
 
   (define (reduce st stack red)
-    (match-define (list nt index arity action) red)
+    (match-define (reduction nt index arity action) red)
     (define-values (args stack*) (pop-values arity stack))
     (define value (tok nt (apply (get-val action) args)))
     (when DEBUG? (eprintf "REDUCE: ~v\n" value))
@@ -195,7 +195,7 @@
 
   (define (reduce st tsk* red)
     ;;(check-value-at-top? 'reduce/1 tsk*)
-    (match-define (list nt index arity action) red)
+    (match-define (reduction nt index arity action) red)
     (with-tstack-pop-values (cons st tsk*) arity
       (lambda (tsk** args)
         ;;(check-state-at-top? 'reduce/2 tsk**)

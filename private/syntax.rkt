@@ -63,7 +63,8 @@
     #:description "element sequence"
     (pattern (e:elem ...)
              #:attr mkast (lambda (nt?)
-                            (for/fold ([acc null] [venv null] #:result (values (reverse acc) venv))
+                            (for/fold ([acc null] [venv null]
+                                       #:result (values (list->vector (reverse acc)) venv))
                                       ([e-mkast (in-list ($ e.mkast))]
                                        [var (in-list ($ e.name))]
                                        [index (in-naturals 1)])

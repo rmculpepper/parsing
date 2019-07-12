@@ -3,8 +3,8 @@
 
 ;; PState = (pstate Nat Any TReader PShiftTable PReduce PGotoTable PAccept PReduceLookahead)
 ;; PShiftTable = Hash[TerminalSymbol => Nat]
-;; PReduce = (Listof (list NT Nat Nat))
-;;   PReduceLookahead = #f | Hash[TerminalSymbol => (list NT Nat Nat)]
+;; PReduce = (reduction NT Nat Nat Action)
+;;   PReduceLookahead = #f | Hash[TerminalSymbol => PReduce]
 ;; PGotoTable = Hash[NT => Nat]
 ;; PAccept = (U #f 'true 'virtual)
 
@@ -15,3 +15,5 @@
 ;; - whose only shift edge is EOF.
 
 (struct pstate (index label tr shift reduce goto accept reduce-lookahead) #:prefab)
+
+(struct reduction (nt index arity action) #:prefab)
