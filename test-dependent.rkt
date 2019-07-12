@@ -175,9 +175,7 @@
 (define sd3a "h=hello;w=world;m=;g=how are you today")
 (send dg3 parse (d3-tokenizer sd3a))
 
-;; IDEA: make char literal have TokenKind 'char by default
-;; IDEA: have integer literal have TokenKind 'integer by default
-;; No, bad idea. But maybe allow configurable defaults?
+;; ?? Maybe allow configurable default TokenReaders,
 ;; eg #:token-kind ([(#\space) char]) or #:token-kind ([char char])
 
 ;; ----------------------------------------
