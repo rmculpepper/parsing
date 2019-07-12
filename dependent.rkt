@@ -601,24 +601,25 @@
         (printf "SLR Conflicts:\n")
         (pretty-print pconflicts)))
 
-    (define/public (print-states)
-      (for ([st pstates]) (print-state st)))
-    (define/public (print-state st)
+    (define/public (print-states [edges? #t])
+      (for ([st pstates]) (print-state st edges?)))
+    (define/public (print-state st [edges? #t])
       (match-define (pstate i label tr shift reduce goto accept reduce-lookahead) st)
       (printf "State ~s: ~s\n" i label)
-      (for ([(t next-st) (in-hash shift)])
-        (printf "  ~s -> shift ~s\n" t next-st))
-      (cond [(hash? reduce-lookahead)
-             (for ([(la red) (in-hash reduce-lookahead)])
-               (match-define (list* nt index _) red)
-               (printf "  lookahead ~s -> reduce ~s (~s)\n" la nt index))]
-            [else
-             (for ([red (in-list reduce)])
-               (match-define (list* nt index _) red)
-               (printf "  -> reduce ~s (~s)\n" nt index))])
-      (for ([(nt next-st) (in-hash goto)])
-        (printf "  ~s -> goto ~s\n" nt next-st))
-      #;(printf "\n"))
+      (when edges?
+        (for ([(t next-st) (in-hash shift)])
+          (printf "  ~s -> shift ~s\n" t next-st))
+        (cond [(hash? reduce-lookahead)
+               (for ([(la red) (in-hash reduce-lookahead)])
+                 (match-define (list* nt index _) red)
+                 (printf "  lookahead ~s -> reduce ~s (~s)\n" la nt index))]
+              [else
+               (for ([red (in-list reduce)])
+                 (match-define (list* nt index _) red)
+                 (printf "  -> reduce ~s (~s)\n" nt index))])
+        (for ([(nt next-st) (in-hash goto)])
+          (printf "  ~s -> goto ~s\n" nt next-st))
+        #;(printf "\n")))
     ))
 
 (define-syntax-rule (push! var elem) (set! var (cons elem var)))
