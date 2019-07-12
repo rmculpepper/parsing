@@ -103,13 +103,13 @@
 ;; ----------------------------------------
 
 (eprintf "\nExample d1:\n")
-(define dg1
-  (lr-parser
-   #:start Message
-   [Message [([msg1 #:read MsgByte] [len int4 #:read Int4] [data data #:read (read-data len)])
-             #:> (list 1 len data)]
-            [([msg2 #:read MsgByte] [d data #:read (read-data '8)])
-             #:> (list 2 d)]]))
+(define-grammar d1
+  #:start Message
+  [Message [([msg1 #:read MsgByte] [len int4 #:read Int4] [data data #:read (read-data len)])
+            #:> (list 1 len data)]
+           [([msg2 #:read MsgByte] [d data #:read (read-data '8)])
+            #:> (list 2 d)]])
+(define dg1 (lr-parser #:grammar d1))
 (send dg1 print)
 
 (define sd1a '((msg1) (int4 4)))
@@ -128,13 +128,13 @@
 ;; ----------------------------------------
 
 (eprintf "\nExample d2:\n")
-(define dg2
-  (lr-parser
-   #:start Phrase
-   [Phrase [([p Phrase] #\space [w Word]) #:> (append p (list w))]
-           [([w Word]) #:> (list w)]]
-   [Word [([c letter]) #:> (list c)]
-         [([c letter] [w Word]) #:> (cons c w)]]))
+(define-grammar d2
+  #:start Phrase
+  [Phrase [([p Phrase] #\space [w Word]) #:> (append p (list w))]
+          [([w Word]) #:> (list w)]]
+  [Word [([c letter]) #:> (list c)]
+        [([c letter] [w Word]) #:> (cons c w)]])
+(define dg2 (lr-parser #:grammar d2))
 (send dg2 print)
 
 (define (d2-tokenizer str)
@@ -149,12 +149,12 @@
 ;; ----------------------------------------
 
 (eprintf "\nExample d3:\n")
-(define dg3
-  (lr-parser
-   #:start Settings
-   [Settings [([ss Settings] [#\; #:read char] [s Setting]) #:> (append ss (list s))]
-             [([s Setting]) #:> (list s)]]
-   [Setting [([c letter #:read char] [#\= #:read char] [w word]) #:> (list c w)]]))
+(define-grammar d3
+  #:start Settings
+  [Settings [([ss Settings] [#\; #:read char] [s Setting]) #:> (append ss (list s))]
+            [([s Setting]) #:> (list s)]]
+  [Setting [([c letter #:read char] [#\= #:read char] [w word]) #:> (list c w)]])
+(define dg3 (lr-parser #:grammar d3))
 (send dg3 print)
 
 (define (d3-tokenizer str)
@@ -174,11 +174,11 @@
 ;; ----------------------------------------
 
 (eprintf "\nExample d4:\n")
-(define dg4
-  (lr-parser
-   #:start S
-   [S [([m byte] [#t #:apply (zero? m)]) #:> 'none]
-      [([n byte] [#f #:apply (zero? n)] [v byte]) #:> v]]))
+(define-grammar d4
+  #:start S
+  [S [([m byte] [#t #:apply (zero? m)]) #:> 'none]
+     [([n byte] [#f #:apply (zero? n)] [v byte]) #:> v]])
+(define dg4 (lr-parser #:grammar d4))
 (send dg4 print)
 
 (define (d4-tokenizer bstr)

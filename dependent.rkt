@@ -2,6 +2,7 @@
 (require (for-syntax racket/base
                      racket/class
                      syntax/parse
+                     "private/grammar-rep.rkt"
                      "util/datum-to-expr.rkt"
                      "private/lr-analysis.rkt")
          racket/class
@@ -10,22 +11,26 @@
          "private/syntax.rkt"
          "private/lr-runtime.rkt")
 (provide (all-defined-out)
-         (all-from-out "private/common.rkt"))
+         (all-from-out "private/common.rkt")
+         define-grammar)
 
 (lazy-require
  ["private/lr-analysis.rkt" (make-LR)])
 
 (define-syntax (lr-parser stx)
+  (define (k g)
+    (define pg (new LR% (g g)))
+    (define pstates (send pg get-pstates))
+    (define vals-expr (datum->expression (send pg get-vals) (lambda (v) (if (syntax? v) v #f))))
+    (with-syntax ([g g]
+                  [pstates (send pg get-pstates)]
+                  [vals-expr vals-expr])
+      #'(make-lr-parser (quote pstates) vals-expr (quote g))))
   (syntax-parse stx
     [(_ #:start start def ...)
-     (define g (parse-grammar #'start #'(def ...) #:context stx))
-     (define pg (new LR% (g g)))
-     (define pstates (send pg get-pstates))
-     (define vals-expr (datum->expression (send pg get-vals) (lambda (v) (if (syntax? v) v #f))))
-     (with-syntax ([g g]
-                   [pstates (send pg get-pstates)]
-                   [vals-expr vals-expr])
-       #'(make-lr-parser (quote pstates) vals-expr (quote g)))]))
+     (k (parse-grammar #'start #'(def ...) #:context stx))]
+    [(_ #:grammar (~var g (static grammar? "grammar")))
+     (k (attribute g.value))]))
 
 (define lr-parser%
   (class object%

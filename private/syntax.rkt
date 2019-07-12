@@ -151,3 +151,16 @@
     [(_ #:start start def ...)
      (datum->expression (parse-grammar #'start #'(def ...) #:context this-syntax)
                         (lambda (v) (cond [(syntax? v) v] [else #f])))]))
+
+;; ----------------------------------------
+
+(begin-for-syntax
+  (define (parse-grammar* stx)
+    (syntax-parse stx
+      [(_ _ #:start start def ...)
+       (parse-grammar #'start #'(def ...) #:context stx)])))
+
+(define-syntax define-grammar
+  (syntax-parser
+    [(_ name:id #:start start def ...)
+     #`(define-syntax name (parse-grammar* (quote-syntax #,this-syntax)))]))
