@@ -1,6 +1,6 @@
 #lang racket/base
 (require racket/class
-         "dependent.rkt")
+         "main.rkt")
 (provide (all-defined-out))
 
 (define (mktz toks)

@@ -2,9 +2,9 @@
 (require racket/class
          racket/match
          racket/pretty
-         "dependent.rkt")
+         "main.rkt")
 (provide (all-defined-out)
-         (all-from-out "dependent.rkt"))
+         (all-from-out "main.rkt"))
 
 (pretty-print-columns 200)
 
