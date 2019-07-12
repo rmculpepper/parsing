@@ -63,7 +63,7 @@
 
 ;; A TokenReader (during table construction) is one of
 ;; - (cons Symbol (Listof TExpr))
-;; - (cons '#:apply Procedure (Listof TExpr))
+;; - (cons '#:apply Nat (Listof TExpr)) -- Nat is index into value table
 ;; where TExpr = Nat | (list Datum) -- a stack index or a literal value.
 
 
@@ -92,7 +92,12 @@
                      "util/datum-to-expr.rkt"
                      "private/grammar-rep.rkt"))
 (begin-for-syntax
-  (define racket-intern-table (make-parameter #f)) ;; free-id-table[Id]
+  (define intern-table (make-parameter #f)) ;; free-id-table[Id]
+  (define value-table (make-parameter #f)) ;; Hash[Syntax => Nat]
+  (define (add-value! stx)
+    (let* ([h (value-table)] [index (hash-count h)]) (hash-ref! h stx index)))
+  (define (intern-value! id)
+    (add-value! (free-id-table-ref! (intern-table) id id)))
   (define (map-apply fs . xs) (for/list ([f (in-list fs)]) (apply f xs)))
   (define-syntax-class ntdef #:attributes (nt nt.ast mkast)
     #:description "nonterminal definition"
@@ -110,7 +115,7 @@
   (define-splicing-syntax-class action #:attributes (mkast)
     #:description "action routine"
     (pattern (~seq (~optional #:>) ~! e:expr ...+)
-             #:attr mkast (lambda (venv) (wrap-expr #'(let () e ...) venv))))
+             #:attr mkast (lambda (venv) (add-value! (wrap-expr #'(let () e ...) venv)))))
   (define-syntax-class elemseq #:attributes (mkast)
     #:description "element sequence"
     (pattern (e:elem ...)
@@ -154,7 +159,7 @@
              #:attr mkast (lambda (nt? venv)
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
                             (record-disappeared-uses #'re)
-                            (let ([re (free-id-table-ref! (racket-intern-table) #'re #'re)])
+                            (let ([re (intern-value! #'re)])
                               (telem ($ t.ast) (list* '#:apply re (map-apply ($ arg.mkast) venv))))))
     (pattern (~seq :t/nt)))
   (define-syntax-class texpr #:attributes (mkast)
@@ -176,6 +181,11 @@
                                        (or (char? v) (boolean? v) (exact-integer? v)))))
              #:attr ast (syntax-e #'x)))
 
+  (define (index-hash->vector h)
+    (define v (make-vector (hash-count h)))
+    (for ([(e i) (in-hash h)]) (vector-set! v i e))
+    v)
+
   (struct token-variable (vvar tvar)
     #:property prop:procedure
     (lambda (self stx)
@@ -195,8 +205,9 @@
     [(_ #:start start:symbol d:ntdef ...)
      (define (nt? s) (member s ($ d.nt.ast)))
      (unless (nt? ($ start.ast)) (wrong-syntax #'start "expected nonterminal symbol"))
-     (parameterize ((racket-intern-table (make-free-id-table)))
-       (datum->expression (grammar ($ start.ast) (map-apply ($ d.mkast) nt?))
+     (parameterize ((intern-table (make-free-id-table)) (value-table (make-hash)))
+       (define defs (map-apply ($ d.mkast) nt?))
+       (datum->expression (grammar ($ start.ast) defs (index-hash->vector (value-table)))
                           (lambda (v) (cond [(syntax? v) v] [else #f]))))]))
 
 ;; ============================================================
@@ -365,9 +376,10 @@
 (define EOF-elem (telem EOF #f))
 
 (define (lr-adjust-grammar g)
-  (match-define (grammar start defs) g)
-  (define start-p (prod START 0 (list (ntelem start) EOF-elem) (lambda (s e) s)))
-  (grammar START (cons (def START (list start-p)) defs)))
+  (match-define (grammar start defs vals) g)
+  (define start-p (prod START 0 (list (ntelem start) EOF-elem) (vector-length vals)))
+  (define vals* (list->vector (append (vector->list vals) (list (lambda (s e) s)))))
+  (grammar START (cons (def START (list start-p)) defs) vals))
 
 (define DOT (string->uninterned-symbol "◇"))
 (define (DOT? x) (eq? x DOT))
@@ -439,7 +451,9 @@
 (define (LR-mixin base%)
   (class base%
     (init g)
-    (super-new [g (lr-adjust-grammar g)])
+    (define g* (lr-adjust-grammar g))
+    (define vals (grammar-vals g*))
+    (super-new [g g*])
     (inherit-field start nt-h)
     (inherit nt? nt-follow)
 
@@ -567,7 +581,7 @@
 
     (define/public (lr0-parse get-token)
       ;; FIXME: check for conflicts!
-      (lr0-parse* pstates get-token))
+      (lr0-parse* pstates vals get-token))
 
     ;; ========================================
 
@@ -632,11 +646,13 @@
 (define (token-name? v)
   (or (symbol? v) (exact-integer? v) (boolean? v) (char? v)))
 
-(define (lr0-parse* states tz)
+(define (lr0-parse* states vals tz)
   (define DEBUG? #f)
   (define (get-token peek? tr stack)
-    (cond [(symbol? (car tr)) (tz peek? (car tr) (get-token-args (cdr tr) stack))]
-          [(eq? (car tr) '#:apply) (apply->token (cadr tr) (get-token-args (cddr tr) stack))]
+    (cond [(symbol? (car tr))
+           (tz peek? (car tr) (get-token-args (cdr tr) stack))]
+          [(eq? (car tr) '#:apply)
+           (apply->token (vector-ref vals (cadr tr)) (get-token-args (cddr tr) stack))]
           [else (error 'lr0-parse "bad tr: ~e" tr)]))
   (define (get-token-args args stack)
     (for/list ([arg (in-list args)])
@@ -668,7 +684,7 @@
   (define (reduce st stack red)
     (match-define (list nt index arity action) red)
     (define-values (args stack*) (pop-values arity stack))
-    (define value (tok nt (apply action args))) ;; (list* nt index args)
+    (define value (tok nt (apply (vector-ref vals action) args))) ;; (list* nt index args)
     (when DEBUG? (eprintf "REDUCE: ~v\n" value))
     (goto value stack*))
 

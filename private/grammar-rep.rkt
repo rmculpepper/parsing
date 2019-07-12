@@ -1,8 +1,8 @@
 #lang racket/base
 (provide (all-defined-out))
 
-;; A Grammar is (grammar NT (Listof Def))
-(struct grammar (start defs) #:prefab)
+;; A Grammar is (grammar NT (Listof Def) (Vectorof Any))
+(struct grammar (start defs vals) #:prefab)
 
 ;; A Def is (def NT (Listof Prod))
 (struct def (nt rhss) #:prefab)
