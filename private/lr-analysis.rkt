@@ -2,6 +2,7 @@
 (require racket/match
          racket/class
          racket/list
+         racket/set
          racket/pretty
          "../util/misc.rkt"
          "grammar-rep.rkt"
@@ -159,14 +160,6 @@
       (apply set-union null
              (for/list ([ret-st (in-list (state-reduce-origin st red))])
                (state-edge ret-st (reduction-nt red)))))
-
-    ;; state-first : State -> (Listof Terminal)
-    (define/public (state-first st)
-      (apply set-union
-             (for/list ([(elem next-st) (in-hash (state-edges st))] #:when (telem? elem))
-               (telem-t elem))
-             (for/list ([red ...])
-               (state-first (state-reduce-goto st red)))))
 
     ;; ========================================
 
