@@ -12,7 +12,7 @@
   (define toks (list->vector toks-list))
 
   (define (nt-name nt) (unger-nt-nt (vector-ref nts nt)))
-  (define (nt-nullable? nt) (unger-nt-nullable? (vector-ref nts nt)))
+  (define (nt-minlen nt) (unger-nt-minlen (vector-ref nts nt)))
 
   ;; memo-hs : (Vectorof Hash[(cons Nat Nat) => (Listof Result)])
   (define memo-hs (build-vector (vector-length nts) (lambda (i) (make-hash))))
@@ -20,7 +20,7 @@
 
   (define (parse-nt want a b ctx)
     (cond [(memv want ctx) null]
-          [(and (= a b) (not (nt-nullable? want))) null]
+          [(< (- b a) (nt-minlen want)) null]
           [else (hash-ref! (nt-memo want) (cons a b)
                            (lambda () (parse-nt* want a b (cons want ctx))))]))
   (define (parse-nt* want a b ectx)

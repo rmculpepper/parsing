@@ -8,6 +8,7 @@
                      "base-analysis.rkt"
                      "unger-common.rkt")
          racket/class
+         racket/lazy-require
          "common.rkt"
          "syntax.rkt"
          "unger-runtime.rkt")
@@ -15,12 +16,22 @@
 
 ;; ============================================================
 
-(begin-for-syntax
+(module analysis racket/base
+  (require racket/class
+           racket/match
+           "grammar-rep.rkt"
+           "base-analysis.rkt"
+           "unger-common.rkt")
+  (provide (all-defined-out))
+
+  (define (make-unger-grammar g)
+    (new unger-grammar% (g g)))
+
   (define unger-grammar%
     (class grammar-base%
       (super-new)
       (inherit-field start defs nt-h)
-      (inherit nt? nt-nullable? nt-minlen)
+      (inherit nt? nt-minlen)
 
       ;; ----------------------------------------
 
@@ -41,7 +52,7 @@
            (match-define (def nt prods) d)
            (unger-nt nt
                      (for/list ([p (in-list prods)]) (prod->unger-prod p))
-                     (nt-nullable? nt)))))
+                     (nt-minlen nt)))))
 
       (define/private (prod->unger-prod p)
         (match-define (prod nt index item action) p)
@@ -73,6 +84,10 @@
                               (left-loop (cdr item) null))]
                 [else (left-loop (cdr item) (cons (ntelem-index (car item)) acc))]))
         (init-loop item)))))
+(require (for-syntax 'analysis))
+
+(lazy-require
+ [(submod "." analysis) (make-unger-grammar)])
 
 (define-syntax (unger-parser stx)
   (define (k g)
@@ -93,6 +108,8 @@
     (super-new)
     (define/public (parse tokens)
       (unger-parse start nts vals tokens))
+    (define/public (generate-corpus n)
+      (send (make-unger-grammar g) generate-corpus n))
     ))
 
 (define (make-unger-parser start nts vals g)

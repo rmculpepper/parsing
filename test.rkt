@@ -104,13 +104,3 @@
 
 (define s6a '((a) (y)))
 (send gg6 parse (mktz s6a))
-
-;; ----------------------------------------
-
-#|
-(random-seed 17)
-;; (printf "Generating corpora\n")
-(define corpus1 (begin #;time (send gg1 generate-corpus #e1e2)))
-(define corpus2 (begin #;time (send gg2 generate-corpus #e5e1)))
-(define corpus3 (begin #;time (send gg3 generate-corpus #e1e2)))
-|#

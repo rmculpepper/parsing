@@ -9,6 +9,6 @@
 (struct unger-split (left-uitem terminal right-uitem) #:prefab)
 
 ;; UGrammar = (Vectorof UNTInfo)
-;; UNTInfo = (unger-nt Nat (Listof UProd) Boolean)
+;; UNTInfo = (unger-nt Nat (Listof UProd) Nat)
 ;; UProd = (prod NT Nat UItem Action)
-(struct unger-nt (nt prods nullable?) #:prefab)
+(struct unger-nt (nt prods minlen) #:prefab)

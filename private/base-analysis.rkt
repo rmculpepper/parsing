@@ -22,10 +22,10 @@
     (define/public (generate [want start])
       (define rhss (nt-rhss want))
       (append*
-       (for/list ([elem (in-vector (list-ref rhss (random (length rhss))))])
+       (for/list ([elem (in-vector (prod-item (list-ref rhss (random (length rhss)))))])
          (match elem
            [(ntelem nt) (generate nt)]
-           [(telem t _) (list t)]))))
+           [(telem t _) (list (list t))]))))
 
     ;; ----------------------------------------
 
