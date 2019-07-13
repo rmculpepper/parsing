@@ -34,6 +34,7 @@
 ;; An LR0-Prod is (prod NT Nat LR0-Item Action)
 
 (define (prod->initial-lrprod p) (cons 0 p))
+(define (lrprod-prod lrp) (cdr lrp))
 
 (define (lrprod-dot-initial? lrp) (zero? (car lrp)))
 (define (lrprod-dot-not-initial? lrp) (not (lrprod-dot-initial? lrp)))
@@ -138,6 +139,34 @@
       (for/fold ([h (hash)]) ([st1 (in-states)])
         (for/fold ([h h]) ([(elem st2) (in-hash (state-edges st1))])
           (hash-update h st2 (lambda (h*) (hash-cons h* elem st1)) (hash)))))
+    (define/public (state-all-preds st)
+      (apply append (hash-values (hash-ref state-pred-h st))))
+
+    ;; state-reduce-origin : State Reduction -> (Listof State)
+    (define/public (state-reduce-origin st red)
+      ;; Given state and reduction (from a final LR0-Item), returns the states
+      ;; that reducing with that rule might *return* to (not the subsequent goto
+      ;; state). Note: if a state contains a reduction whose item has N
+      ;; elements, then all predecessor chains must have length at least N, and
+      ;; each of the pred^N states originates the given production.
+      (for/fold ([sts (list st)]) ([n (in-range (reduction-arity red))])
+        (apply set-union null (for/list ([st (in-list sts)]) (state-all-preds st)))))
+
+    ;; state-reduce-goto : State Reduction -> (Listof State)
+    (define/public (state-reduce-goto st red)
+      ;; Given state and reduction (from a final LR0-Item), returns the states
+      ;; that might follow from a single reduce/goto pair of edges.
+      (apply set-union null
+             (for/list ([ret-st (in-list (state-reduce-origin st red))])
+               (state-edge ret-st (reduction-nt red)))))
+
+    ;; state-first : State -> (Listof Terminal)
+    (define/public (state-first st)
+      (apply set-union
+             (for/list ([(elem next-st) (in-hash (state-edges st))] #:when (telem? elem))
+               (telem-t elem))
+             (for/list ([red ...])
+               (state-first (state-reduce-goto st red)))))
 
     ;; ========================================
 
