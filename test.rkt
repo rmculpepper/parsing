@@ -3,8 +3,10 @@
          "main.rkt")
 (provide (all-defined-out))
 
+(define tok* (case-lambda [(t) (tok t t)] [(t v) (tok t v)]))
+(define (apply-tok* v) (apply tok* v))
+
 (define (mktz toks)
-  (define tok* (case-lambda [(t) (tok t t)] [(t v) (tok t v)]))
   (peeking-tokenizer
    (lambda (_p? _k _a)
      (if (pair? toks) (begin0 (apply tok* (car toks)) (set! toks (cdr toks))) EOF-tok))))
