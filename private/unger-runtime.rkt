@@ -25,9 +25,14 @@
                            (lambda () (parse-nt* want a b (cons want ctx))))]))
   (define (parse-nt* want a b ectx)
     (define ntinfo (vector-ref nts want))
-    (append*
-     (for/list ([p (in-list (unger-nt-prods ntinfo))])
-       (parse-prod p a b ectx))))
+    (cond [(and (< a b) (not (memv (tok-t (vector-ref toks a)) (unger-nt-first ntinfo))))
+           null]
+          [(and (< a b) (not (memv (tok-t (vector-ref toks (sub1 b))) (unger-nt-final ntinfo))))
+           null]
+          [else
+           (append*
+            (for/list ([p (in-list (unger-nt-prods ntinfo))])
+              (parse-prod p a b ectx)))]))
 
   (define (parse-prod p a b ectx)
     (match-define (prod nt index uitem action) p)

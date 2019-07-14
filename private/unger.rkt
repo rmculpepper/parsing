@@ -31,7 +31,7 @@
     (class grammar-base%
       (super-new)
       (inherit-field start defs nt-h)
-      (inherit nt? nt-minlen)
+      (inherit nt? nt-minlen nt-first nt-final)
 
       ;; ----------------------------------------
 
@@ -52,7 +52,9 @@
            (match-define (def nt prods) d)
            (unger-nt nt
                      (for/list ([p (in-list prods)]) (prod->unger-prod p))
-                     (nt-minlen nt)))))
+                     (nt-minlen nt)
+                     (map telem-t (nt-first nt))
+                     (map telem-t (nt-final nt))))))
 
       (define/private (prod->unger-prod p)
         (match-define (prod nt index item action) p)

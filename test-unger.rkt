@@ -26,7 +26,6 @@
 
 ;; ----------------------------------------
 
-#|
 (random-seed 17)
 (printf "Generating corpora\n")
 (define corpus1 (begin #;time (send up1 generate-corpus #e1e2)))
@@ -37,4 +36,3 @@
         (for ([s (in-list corpus2)])
           (printf "sentence: ~s tokens\n" (length s))
           (time (send up2 parse (map apply-tok* s))))))
-|#
