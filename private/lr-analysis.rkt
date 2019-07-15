@@ -179,9 +179,11 @@
 
     (define/public (reify-lr0)
       ;; Reifies the LR0 state graph as a grammar.
-      (define (mknnt st nt) (cons (state-index st) nt))
-      (define (nnt-st nnt) (index->state (car nnt)))
-      (define (nnt-nt nnt) (cdr nnt))
+      (define (mknnt st nt)
+        ;; (cons (state-index st) nt)
+        ;; Use unreadable symbol to avoid collision with terminals.
+        ;; FIXME: check terminal symbols are interned-readable!
+        (string->unreadable-symbol (format "~a:~a" (state-index st) nt)))
       (define (get-nitem st item)
         (list->vector
          (let loop ([st st] [i 0])
