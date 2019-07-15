@@ -12,10 +12,10 @@
 (provide (all-defined-out))
 
 (lazy-require
- ["private/ll1-analysis.rkt" (make-LL1)])
+ ["ll1-analysis.rkt" (make-LL1)])
 
 (begin-for-syntax
-  (define (make-parser-expr g mode)
+  (define (make-parser-expr g)
     (define pg (make-LL1 g))
     (define table (send pg get-table))
     (define vals-expr (datum->expression (send pg get-vals) (lambda (v) (if (syntax? v) v #f))))
@@ -33,13 +33,13 @@
     (init-field table vals g)
     (super-new)
     (define/public (parse get-token)
-      (ll1-parse table vals get-token))
+      (ll1-parse (grammar-start g) table vals get-token))
     (define/public (print)
       (define rt (make-LL1 g))
       (send rt print))
     ))
 
-(define (make-ll1-parser table vals g mode)
+(define (make-ll1-parser table vals g)
   (new ll1-parser% (table table) (vals vals) (g g)))
 
 ;; ============================================================
@@ -71,13 +71,13 @@
       [(cons tr dispatch)
        (define next-tok (get-token #t tr null))
        (cond [(hash-ref dispatch (tok-t next-tok) #f)
-              => (lambda (p) (loop-prod p))]
+              => (lambda (ps) (loop-prod (car ps)))]
              [else (error 'll1-parse "NT = ~v, next = ~v" nt next-tok)])]))
 
   (define (loop-elem e lstack)
     (match e
       [(ntelem nt)
-       (cons (loop-nt nt) lstack)]
+       (cons (cons nt (loop-nt nt)) lstack)]
       [(telem t tr)
        (define next-tok (get-token #f tr lstack))
        (if (equal? t (tok-t next-tok))
@@ -94,6 +94,9 @@
     (apply (get-val action) (reverse lstack)))
 
   (loop-nt start))
+
+;; FIXME: don't need to store (tok NT/T Value) on stack, just Value,
+;; *except* for detecting tokens without payloads in action routines.
 
 (define (apply->token f args)
   (define v (apply f args))

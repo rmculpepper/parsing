@@ -24,19 +24,17 @@
     (define/public (get-vals) (grammar-vals g))
 
     (define/public (def->entry d)
-      (match d
-        [(def nt (list p)) p]
-        [(def nt rhss)
-         (define tr
-           (let ([telems (set-union (nt-first nt) (if (nt-nullable? nt) (nt-follow nt) null))])
-             (telems-consistent-tr 'll1-parser telems)))
-         (cons tr
-               (for/fold ([h (hash)]) ([p (in-list rhss)])
-                 (match-define (prod nt index item action) p)
-                 (define telems
-                   (set-union (item-first item) (if (item-nullable? item) (nt-follow nt) null)))
-                 (for/fold ([h h]) ([te (in-list telems)])
-                   (hash-cons h (telem-t te) p))))]))
+      (match-define (def nt rhss) d)
+      (define tr
+        (let ([telems (set-union (nt-first nt) (if (nt-nullable? nt) (nt-follow nt) null))])
+          (telems-consistent-tr 'll1-parser telems)))
+      (cons tr
+            (for/fold ([h (hash)]) ([p (in-list rhss)])
+              (match-define (prod nt index item action) p)
+              (define telems
+                (set-union (item-first item) (if (item-nullable? item) (nt-follow nt) null)))
+              (for/fold ([h h]) ([te (in-list telems)])
+                (hash-cons h (telem-t te) p)))))
 
     (define ll1-table
       ;; Hash[NT => Hash[Terminal => (cons Nat (Listof Prod))]
@@ -51,7 +49,8 @@
         (for/list ([def defs])
           (define nt (def-nt def))
           (for/fold ([conflicts null] [acc-first null] #:result conflicts)
-                    ([item (def-rhss def)] [index (in-naturals)])
+                    ([p (def-rhss def)] [index (in-naturals)])
+            (match-define (prod nt index item action) p)
             (define overlap (set-intersect acc-first (item-first item)))
             (values (if (set-empty? overlap)
                         conflicts

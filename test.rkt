@@ -1,8 +1,10 @@
 #lang racket/base
 (require racket/class
-         "main.rkt")
+         "main.rkt"
+         "private/ll1.rkt")
 (provide (all-defined-out)
-         (all-from-out "main.rkt"))
+         (all-from-out "main.rkt")
+         (all-from-out "private/ll1.rkt"))
 
 (define tok* (case-lambda [(t) (tok t t)] [(t v) (tok t v)]))
 (define (apply-tok* v) (apply tok* v))
@@ -45,6 +47,8 @@
 
 (define s2a '((lparen) (atom 5) (op +) (atom 6) (rparen)))
 (send gg2 parse (mktz s2a))
+
+(define lg2 (ll1-parser #:grammar g2))
 
 ;; --------------------
 
