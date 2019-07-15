@@ -78,7 +78,7 @@
 ;; --------------------
 
 (eprintf "\nExample 5:\n")
-;; Example with LR0 (and SLR?) shift/reduce conflict
+;; Example with LR0 (and LR1?) shift/reduce conflict
 (define-grammar g5
   #:start E
   [E [(a) #:> $1]
@@ -132,7 +132,7 @@
      [(B b B a) #:auto]]
   [A [(x) #:auto]]
   [B [(x) #:auto]])
-(define gg8 (lalr-parser #:grammar g8))
+(define gg8 (lr-parser #:grammar g8))
 (send gg8 print)
 
 (send gg8 parse (mktz '((x) (a) (x) (b))))
@@ -148,7 +148,7 @@
      [(d c) #:auto]
      [(b d a) #:auto]]
   [A [(d) #:auto]])
-(define gg9 (lalr-parser #:grammar g9))
+(define gg9 (lr-parser #:grammar g9))
 (send gg9 print)
 
 (send gg9 parse (mktz '((d) (c))))
