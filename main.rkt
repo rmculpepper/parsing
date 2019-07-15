@@ -18,6 +18,10 @@
  ["private/lr-analysis.rkt" (make-LR)])
 
 (begin-for-syntax
+  (define-syntax-class mode
+    (pattern #:lr0 #:attr mode 'lr0)
+    (pattern #:slr1 #:attr mode 'slr1)
+    (pattern #:lalr1 #:attr mode 'lalr1))
   (define (make-parser-expr g mode)
     (define pg (make-LR g mode))
     (define pstates (send pg get-pstates))
@@ -25,10 +29,6 @@
     #`(make-lr-parser (quote #,pstates) #,vals-expr (quote #,g) (quote #,mode))))
 
 (define-syntax (lr-parser stx)
-  (define-syntax-class mode
-    (pattern #:lr0 #:attr mode 'lr0)
-    (pattern #:slr1 #:attr mode 'slr1)
-    (pattern #:lalr1 #:attr mode 'lalr1))
   (syntax-parse stx
     [(_ (~optional la:mode) #:start start def ...)
      (make-parser-expr (parse-grammar #'start #'(def ...) #:context stx)
@@ -38,10 +38,12 @@
                        (or (attribute la.mode) 'lalr1))]))
 
 #;
-(define-syntax (lalr-parser stx)
+(define-syntax (lrrlr-parser stx)
   (syntax-parse stx
-    [(_ #:grammar (~var g (static grammar? "grammar")))
-     (make-parser-expr (attribute g.value) 'lalr1)]))
+    [(_ la:mode #:grammar (~var g (static grammar? "grammar")))
+     (define pg (make-LR (attribute g.value) 'lr0))
+     (define g* (send pg reify-lr0))
+     (make-parser-expr g* (attribute la.mode))]))
 
 (define lr-parser%
   (class object%

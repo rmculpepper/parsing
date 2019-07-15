@@ -197,7 +197,7 @@
           (hash-cons h nnt (prod nnt index (get-nitem st item) action))))
       (grammar (mknnt state0 start)
                (for/list ([(nnt prods) (in-hash ndef-h)]) (def nnt (reverse prods)))
-               'no-vals))
+               (get-vals)))
 
     ;; ========================================
 

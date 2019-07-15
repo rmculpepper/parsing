@@ -1,7 +1,8 @@
 #lang racket/base
 (require racket/class
          "main.rkt")
-(provide (all-defined-out))
+(provide (all-defined-out)
+         (all-from-out "main.rkt"))
 
 (define tok* (case-lambda [(t) (tok t t)] [(t v) (tok t v)]))
 (define (apply-tok* v) (apply tok* v))
