@@ -85,15 +85,14 @@
 
 ;; ------------------------------------------------------------
 
-(define (LR-mixin base%)
-  (class base%
-    (init g)
-    (field [g* (lr-adjust-grammar g)])
-    (super-new [g g*])
-    (inherit-field start nt-h)
+(define LR%
+  (class grammar-base%
+    (init-field [lookahead-mode 'lalr1]) ;; (U 'lr0 'slr1 'lalr1)
+    (super-new)
+    (inherit-field g start nt-h)
     (inherit nt? nt-follow)
 
-    (define/public (get-vals) (grammar-vals g*))
+    (define/public (get-vals) (grammar-vals g))
 
     (define-syntax-rule (push! var elem) (set! var (cons elem var)))
 
@@ -172,9 +171,47 @@
     (define/private (state-index state) (hash-ref state-index-h state))
     (define/private (state-count) (hash-count state-index-h))
 
+    (define state-from-index-h
+      (for/fold ([h (hash)]) ([(s i) (in-hash state-index-h)]) (hash-set h i s)))
+    (define/private (index->state index) (hash-ref state-from-index-h index))
+
+    ;; ========================================
+
+    (define/public (reify-lr0)
+      ;; Reifies the LR0 state graph as a grammar.
+      (define (mknnt st nt) (cons (state-index st) nt))
+      (define (nnt-st nnt) (index->state (car nnt)))
+      (define (nnt-nt nnt) (cdr nnt))
+      (define (get-nitem st item)
+        (list->vector
+         (let loop ([st st] [i 0])
+           (cond [(< i (vector-length item))
+                  (define elemi (vector-ref item i))
+                  (define next-st (state-edge st elemi))
+                  (cons (match elemi [(ntelem nt) (ntelem (mknnt st nt))] [_ elemi])
+                        (loop next-st (add1 i)))]
+                 [else null]))))
+      (define ndef-h ;; FIXME: use lists, group-by instead of hash
+        (for*/fold ([h (hash)]) ([st (in-states)] [lrp (in-list st)] #:when (lrprod-dot-initial? lrp))
+          (match-define (cons 0 (prod nt index item action)) lrp)
+          (define nnt (mknnt st nt))
+          (hash-cons h nnt (prod nnt index (get-nitem st item) action))))
+      (grammar (mknnt state0 start)
+               (for/list ([(nnt prods) (in-hash ndef-h)]) (def nnt (reverse prods)))
+               (get-vals)))
+
     ;; ========================================
 
     (define/private (make-pstates)
+      (case lookahead-mode
+        [(lalr1)
+         (define g* (reify-lr0))
+         (define s* (new LR% (g g*) (lookahead-mode 'slr1)))
+         (send s* get-pstates)]
+        [(slr1) (make-pstates* #t)]
+        [(lr0) (make-pstates* #f)]))
+
+    (define/private (make-pstates* slr?)
       (define (state->pstate st index)
         (define label (lr-state-label st))
         (define shift (for/hash ([(elem st) (in-hash (state-edges st))] #:when (telem? elem))
@@ -187,11 +224,16 @@
             (match-define (cons _ (prod nt index item action)) lrp)
             (reduction nt index (vector-length item) action)))
         (define accept
-          (cond [(equal? (map reduction-nt reduce) (list START)) 'true]
+          (cond [(equal? (map reduction-nt reduce) (list start))
+
+                 (eprintf "** got TRUE accept state (~s), reductions=\n~v\n" index reduce)
+
+                 'true]
                 [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
                 [else #f]))
         (define lookahead/e
-          (cond [(null? reduce) #f]
+          (cond [(not slr?) #f]
+                [(null? reduce) #f]
                 [(and (hash-empty? shift) (<= (length reduce) 1)) #f]
                 [else (slr-lookahead reduce)]))
         (define treader
@@ -241,6 +283,8 @@
     ;; ========================================
 
     (define/override (print)
+      (printf "Grammar:\n~v\n" g)
+      (printf "Start: ~v\n" start)
       (super print)
       (when #t
         (printf "LR0 States:\n")
@@ -276,5 +320,4 @@
         #;(printf "\n")))
     ))
 
-(define LR% (LR-mixin grammar-base%))
-(define (make-LR g) (new LR% (g g)))
+(define (make-LR g) (new LR% (g (lr-adjust-grammar g))))

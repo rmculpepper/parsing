@@ -19,7 +19,7 @@
 
 (define-syntax (lr-parser stx)
   (define (k g)
-    (define pg (new LR% (g g)))
+    (define pg (make-LR g))
     (define pstates (send pg get-pstates))
     (define vals-expr (datum->expression (send pg get-vals) (lambda (v) (if (syntax? v) v #f))))
     (with-syntax ([g g]
@@ -43,6 +43,9 @@
     (define/public (print)
       (define rt (make-LR g))
       (send rt print))
+    (define/public (reify-lr0)
+      (define rt (make-LR g))
+      (send rt reify-lr0))
     ))
 
 (define (make-lr-parser pstates vals g)

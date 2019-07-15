@@ -9,7 +9,7 @@
 
 (define grammar-base%
   (class object%
-    (init g)
+    (init-field g)
     (field [start (grammar-start g)]
            [defs (grammar-defs g)])
     (super-new)
@@ -141,7 +141,7 @@
                         (set-union (nt-first nt)
                                    (if (nt-nullable? nt) follows-this null)))]
                [_ (values h (list elem))]))))
-       (hash start (list EOF))))
+       (hash start (list (telem EOF #f)))))
 
     ;; *-follow : ... -> (Listof telem)
     (define/public (nt-follow nt #:h [h nt-follow-h])

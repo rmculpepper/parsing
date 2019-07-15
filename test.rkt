@@ -104,3 +104,20 @@
 
 (define s6a '((a) (y)))
 (send gg6 parse (mktz s6a))
+
+;; --------------------
+
+(eprintf "\nExample 7:\n")
+;; LALR(1) but not LR(0)
+(define-grammar g7
+  #:start S
+  [S [(E) #:auto]]
+  [E [(E minus T) #:auto]
+     [(T) #:auto]]
+  [T [(number) #:auto]
+     [(lparen E rparen) #:auto]])
+(define gg7 (lr-parser #:grammar g7))
+(send gg7 print)
+
+(define s7a '((number 5) (minus) (number 2) (minus) (number 1)))
+(send gg7 parse (mktz s7a))
