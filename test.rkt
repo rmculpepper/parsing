@@ -1,10 +1,8 @@
 #lang racket/base
 (require racket/class
-         "main.rkt"
-         "private/ll1.rkt")
+         "main.rkt")
 (provide (all-defined-out)
-         (all-from-out "main.rkt")
-         (all-from-out "private/ll1.rkt"))
+         (all-from-out "main.rkt"))
 
 (define tok* (case-lambda [(t) (tok t t)] [(t v) (tok t v)]))
 (define (apply-tok* v) (apply tok* v))
