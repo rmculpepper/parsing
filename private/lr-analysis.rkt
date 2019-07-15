@@ -179,11 +179,13 @@
 
     (define/public (reify-lr0)
       ;; Reifies the LR0 state graph as a grammar.
+      (define nnt-intern-h (make-hash))
       (define (mknnt st nt)
         ;; (cons (state-index st) nt)
-        ;; Use unreadable symbol to avoid collision with terminals.
-        ;; FIXME: check terminal symbols are interned-readable!
-        (string->unreadable-symbol (format "~a:~a" (state-index st) nt)))
+        ;; Use uninterned symbol to avoid collision with terminals.
+        (hash-ref! nnt-intern-h (cons st nt)
+                   (lambda () (string->uninterned-symbol
+                               (format "~a:~a" (state-index st) nt)))))
       (define (get-nitem st item)
         (list->vector
          (let loop ([st st] [i 0])
@@ -281,8 +283,6 @@
     ;; ========================================
 
     (define/override (print)
-      (printf "Grammar:\n~v\n" g)
-      (printf "Start: ~v\n" start)
       (super print)
       (when #t
         (printf "LR0 States:\n")

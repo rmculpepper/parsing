@@ -121,3 +121,18 @@
 
 (define s7a '((number 5) (minus) (number 2) (minus) (number 1)))
 (send gg7 parse (mktz s7a))
+
+;; --------------------
+
+(eprintf "\nExample 8:\n")
+;; LALR(1) but not SLR(1)
+(define-grammar g8
+  #:start S
+  [S [(A a A b) #:auto]
+     [(B b B a) #:auto]]
+  [A [(x) #:auto]]
+  [B [(x) #:auto]])
+(define gg8 (lr-parser #:grammar g8))
+(send gg8 print)
+
+(send gg8 parse (mktz '((x) (a) (x) (b))))
