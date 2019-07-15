@@ -87,7 +87,7 @@
 
 (define LR%
   (class grammar-base%
-    (init-field [lookahead-mode 'lalr1]) ;; (U 'lr0 'slr1 'lalr1)
+    (init-field [lookahead-mode 'slr1]) ;; (U 'lr0 'slr1 'lalr1)
     (super-new)
     (inherit-field g start nt-h)
     (inherit nt? nt-follow)
@@ -180,12 +180,7 @@
     (define/public (reify-lr0)
       ;; Reifies the LR0 state graph as a grammar.
       (define nnt-intern-h (make-hash))
-      (define (mknnt st nt)
-        ;; (cons (state-index st) nt)
-        ;; Use uninterned symbol to avoid collision with terminals.
-        (hash-ref! nnt-intern-h (cons st nt)
-                   (lambda () (string->uninterned-symbol
-                               (format "~a:~a" (state-index st) nt)))))
+      (define (mknnt st nt) (cons (state-index st) nt))
       (define (get-nitem st item)
         (list->vector
          (let loop ([st st] [i 0])
@@ -202,20 +197,18 @@
           (hash-cons h nnt (prod nnt index (get-nitem st item) action))))
       (grammar (mknnt state0 start)
                (for/list ([(nnt prods) (in-hash ndef-h)]) (def nnt (reverse prods)))
-               (get-vals)))
+               'no-vals))
 
     ;; ========================================
 
-    (define/private (make-pstates)
-      (case lookahead-mode
-        [(lalr1)
-         (define g* (reify-lr0))
-         (define s* (new LR% (g g*) (lookahead-mode 'slr1)))
-         (send s* get-pstates)]
-        [(slr1) (make-pstates* #t)]
-        [(lr0) (make-pstates* #f)]))
-
-    (define/private (make-pstates* slr?)
+    (define/public (make-pstates)
+      (define make-lookahead
+        (case lookahead-mode
+          [(lr0) (lambda (st reduce) #f)]
+          [(slr1) (lambda (st reduce) (slr1-lookahead reduce))]
+          [(lalr1) (let* ([g* (reify-lr0)] [gg* (new grammar-base% (g g*))])
+                     (define (follow st nt) (send gg* nt-follow (cons (state-index st) nt)))
+                     (lambda (st reduce) (lalr1-lookahead follow st reduce)))]))
       (define (state->pstate st index)
         (define label (lr-state-label st))
         (define shift (for/hash ([(elem st) (in-hash (state-edges st))] #:when (telem? elem))
@@ -232,10 +225,9 @@
                 [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
                 [else #f]))
         (define lookahead/e
-          (cond [(not slr?) #f]
-                [(null? reduce) #f]
+          (cond [(null? reduce) #f]
                 [(and (hash-empty? shift) (<= (length reduce) 1)) #f]
-                [else (slr-lookahead reduce)]))
+                [else (make-lookahead st reduce)]))
         (define treader
           (telems-consistent-tr
            (append (filter telem? (hash-keys (state-edges st)))
@@ -266,12 +258,21 @@
                 (and (> (+ (length reds) (if shift-st 1 0)) 1)
                      (conflict index t shift-st reds)))))
 
-    (define/public (slr-lookahead reduce) ;; -> Hash[Elem => (Listof Reduction)]
+    (define/public (slr1-lookahead reduce) ;; -> Hash[Elem => (Listof Reduction)]
       (for/fold ([h (hash)]) ([red (in-list reduce)])
         (match-define (reduction red-nt _ _ _) red)
         (define follows (nt-follow red-nt))
         (for/fold ([h h]) ([t (in-list follows)])
           (hash-cons h t red))))
+
+    (define/public (lalr1-lookahead follow st reduce)
+      (for/fold ([h (hash)]) ([red (in-list reduce)])
+        (define red-la
+          (apply set-union null
+                 (for/list ([origin-st (in-list (state-reduce-origin st red))])
+                   (follow origin-st (reduction-nt red)))))
+        (for/fold ([h h]) ([elem (in-set red-la)])
+          (hash-cons h elem red))))
 
     (define pstates (make-pstates))
     (define/public (get-pstates) pstates)
@@ -318,4 +319,4 @@
         #;(printf "\n")))
     ))
 
-(define (make-LR g) (new LR% (g (lr-adjust-grammar g))))
+(define (make-LR g mode) (new LR% (g (lr-adjust-grammar g)) (lookahead-mode mode)))

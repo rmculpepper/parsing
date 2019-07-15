@@ -132,7 +132,24 @@
      [(B b B a) #:auto]]
   [A [(x) #:auto]]
   [B [(x) #:auto]])
-(define gg8 (lr-parser #:grammar g8))
+(define gg8 (lalr-parser #:grammar g8))
 (send gg8 print)
 
 (send gg8 parse (mktz '((x) (a) (x) (b))))
+
+;; --------------------
+
+(eprintf "\nExample 9:\n")
+;; LALR(1) but not SLR(1)
+(define-grammar g9
+  #:start S
+  [S [(A a) #:auto]
+     [(b A c) #:auto]
+     [(d c) #:auto]
+     [(b d a) #:auto]]
+  [A [(d) #:auto]])
+(define gg9 (lalr-parser #:grammar g9))
+(send gg9 print)
+
+(send gg9 parse (mktz '((d) (c))))
+(send gg9 parse (mktz '((b) (d) (a))))

@@ -17,36 +17,40 @@
 (lazy-require
  ["private/lr-analysis.rkt" (make-LR)])
 
-(define-syntax (lr-parser stx)
-  (define (k g)
-    (define pg (make-LR g))
+(begin-for-syntax
+  (define (make-parser-expr g mode)
+    (define pg (make-LR g mode))
     (define pstates (send pg get-pstates))
     (define vals-expr (datum->expression (send pg get-vals) (lambda (v) (if (syntax? v) v #f))))
-    (with-syntax ([g g]
-                  [pstates (send pg get-pstates)]
-                  [vals-expr vals-expr])
-      #'(make-lr-parser (quote pstates) vals-expr (quote g))))
+    #`(make-lr-parser (quote #,pstates) #,vals-expr (quote #,g) (quote #,mode))))
+
+(define-syntax (lr-parser stx)
   (syntax-parse stx
     [(_ #:start start def ...)
-     (k (parse-grammar #'start #'(def ...) #:context stx))]
+     (make-parser-expr (parse-grammar #'start #'(def ...) #:context stx) 'slr1)]
     [(_ #:grammar (~var g (static grammar? "grammar")))
-     (k (attribute g.value))]))
+     (make-parser-expr (attribute g.value) 'slr1)]))
+
+(define-syntax (lalr-parser stx)
+  (syntax-parse stx
+    [(_ #:grammar (~var g (static grammar? "grammar")))
+     (make-parser-expr (attribute g.value) 'lalr1)]))
 
 (define lr-parser%
   (class object%
-    (init-field pstates vals g)
+    (init-field pstates vals g mode)
     (super-new)
     (define/public (parse get-token)
       (lr-parse pstates vals get-token))
     (define/public (parse* get-token)
       (glr-parse pstates vals get-token #:mode 'first-done))
     (define/public (print)
-      (define rt (make-LR g))
+      (define rt (make-LR g mode))
       (send rt print))
     (define/public (reify-lr0)
-      (define rt (make-LR g))
+      (define rt (make-LR g mode))
       (send rt reify-lr0))
     ))
 
-(define (make-lr-parser pstates vals g)
-  (new lr-parser% (pstates pstates) (vals vals) (g g)))
+(define (make-lr-parser pstates vals g mode)
+  (new lr-parser% (pstates pstates) (vals vals) (g g) (mode mode)))
