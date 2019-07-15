@@ -73,16 +73,6 @@
   (cond [(zero? k) (cons DOT xs)]
         [else (cons (car xs) (insert-dot (sub1 k) (cdr xs)))]))
 
-(define (telems-consistent-tr elems [fail #f])
-  (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
-  (match (group-by telem-tr proper-elems)
-    [(list) '(default)]
-    [(list group)
-     (telem-tr (car group))]
-    [groups
-     (define kinds (map telem-tr (map car groups)))
-     (if fail (fail kinds) (error 'dep-lr "inconsistent token kinds\n  kinds: ~v" kinds))]))
-
 ;; ------------------------------------------------------------
 
 (define LR%
@@ -230,6 +220,7 @@
                 [else (make-lookahead st reduce)]))
         (define treader
           (telems-consistent-tr
+           'lr-parser
            (append (filter telem? (hash-keys (state-edges st)))
                    (if lookahead/e (hash-keys lookahead/e) null))))
         (define lookahead

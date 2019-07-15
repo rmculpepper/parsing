@@ -81,10 +81,10 @@
 
 (define (apply->token f args)
   (define v (apply f args))
-  (list (if (token-name? v) v 'bad-token-name)))
+  (list (if (ok-terminal? v) v 'bad-token-name)))
 
-(define (token-name? v)
-  (or (symbol? v) (exact-integer? v) (boolean? v) (char? v)))
+(define (ok-terminal? v)
+  (or (symbol? v) (char? v) (boolean? v) (exact-integer? v)))
 
 ;; ============================================================
 

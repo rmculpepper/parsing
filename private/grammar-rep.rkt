@@ -1,4 +1,6 @@
 #lang racket/base
+(require racket/match
+         racket/list)
 (provide (all-defined-out))
 
 ;; A Grammar is (grammar NT (Listof Def) (Vectorof Any))
@@ -62,3 +64,13 @@
 ;;   Msg -> [f Flag] [false : (has-X-bit? f)] Y
 
 (define EOF (string->unreadable-symbol "EOF"))
+
+(define (telems-consistent-tr who elems [fail #f])
+  (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
+  (match (group-by telem-tr proper-elems)
+    [(list) '(default)]
+    [(list group)
+     (telem-tr (car group))]
+    [groups
+     (define kinds (map telem-tr (map car groups)))
+     (if fail (fail kinds) (error who "inconsistent token readers\n  readers: ~v" kinds))]))
