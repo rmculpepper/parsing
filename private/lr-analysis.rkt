@@ -226,11 +226,7 @@
             (match-define (cons _ (prod nt index item action)) lrp)
             (reduction nt index (vector-length item) action)))
         (define accept
-          (cond [(equal? (map reduction-nt reduce) (list start))
-
-                 (eprintf "** got TRUE accept state (~s), reductions=\n~v\n" index reduce)
-
-                 'true]
+          (cond [(equal? (map reduction-nt reduce) (list start)) 'true]
                 [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
                 [else #f]))
         (define lookahead/e
