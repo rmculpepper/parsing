@@ -156,3 +156,30 @@
 
 (send gg9 parse (mktz '((d) (c))))
 (send gg9 parse (mktz '((b) (d) (a))))
+
+;; --------------------
+
+(eprintf "\nExample 10:\n")
+;; Example of LL(1) grammar that is not LALR(1)!
+;; Ref: https://stackoverflow.com/questions/6487588/#6492798
+(define-grammar g10
+  #:start S
+  [S [(lparen X) #:auto]
+     [(E rbracket) #:auto]
+     [(F rparen) #:auto]]
+  [X [(E rparen) #:auto]
+     [(F rbracket) #:auto]]
+  [E [(A) #:auto]]
+  [F [(A) #:auto]]
+  [A [() #:auto]])
+(define gg10 (lr-parser #:grammar g10))
+(send gg10 print)
+
+;;(send gg10 parse (mktz '...))
+
+
+
+
+
+;;[S #:= (...)
+;;   #:> ...]
