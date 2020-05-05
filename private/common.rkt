@@ -92,3 +92,6 @@
                  [else (begin (read-char in) (write-char next out) (loop))]))]))
 
 ;; ============================================================
+;; Disambiguation filters
+
+(struct filter:reject () #:prefab)
