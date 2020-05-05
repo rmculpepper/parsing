@@ -9,7 +9,8 @@
          racket/lazy-require
          "common.rkt"
          "syntax.rkt"
-         "lr-runtime.rkt")
+         "lr-runtime.rkt"
+         "glr-runtime.rkt")
 (provide (all-defined-out))
 
 (lazy-require
@@ -34,14 +35,6 @@
     [(_ (~optional la:mode) #:grammar (~var g (static grammar? "grammar")))
      (make-parser-expr (attribute g.value)
                        (or (attribute la.mode) 'lalr1))]))
-
-#;
-(define-syntax (lrrlr-parser stx)
-  (syntax-parse stx
-    [(_ la:mode #:grammar (~var g (static grammar? "grammar")))
-     (define pg (make-LR (attribute g.value) 'lr0))
-     (define g* (send pg reify-lr0))
-     (make-parser-expr g* (attribute la.mode))]))
 
 (define lr-parser%
   (class object%
