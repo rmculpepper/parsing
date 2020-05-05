@@ -65,6 +65,26 @@
       (lambda (st tsk*) (unless (pair? st) (error who "top of stack is not value: ~v" tsk))))))
 |#
 
+;; FIXME: in GLR, if token arguments, *values* must be consistent, not just exprs
+;; For now, just disallow parameters.
+(define (pstates-consistent-tr states [fail #f])
+  (define proper-states (filter pstate-tr states)) ;; ignore polymorphic
+  (match (group-by pstate-tr proper-states)
+    [(list) #f]
+    [(list group)
+     (define tr (pstate-tr (car group)))
+     (match tr [(list (? symbol?)) tr] [_ (error 'glr-parse "unsupported token reader: ~e" tr)])]
+    [groups
+     (define trs (map pstate-tr (map car groups)))
+     (if fail (fail trs) (error 'glr-parse "ambiguous token reader\n  candidates: ~e" trs))]))
+
+(define (with-tstack-pop-values tsk arity k)
+  ;;(check-state-at-top? 'with-stack-pop-values tsk)
+  (let loop ([tsk tsk] [arity arity] [acc null])
+    (cond [(zero? arity) (k tsk acc)]
+          [else (with-tstack-look tsk 2
+                  (lambda (s1 v2 tsk**) (loop tsk** (sub1 arity) (cons v2 acc))))])))
+
 ;; ----------------------------------------
 
 (define (glr-parse states vals tz #:mode [mode 'complete])
@@ -167,23 +187,3 @@
     (cond [(and (memq mode '(first-done)) (pair? done)) done]
           [(null? ready) done]
           [else (run-all-ready) (loop)])))
-
-;; FIXME: in GLR, if token arguments, *values* must be consistent, not just exprs
-;; For now, just disallow parameters.
-(define (pstates-consistent-tr states [fail #f])
-  (define proper-states (filter pstate-tr states)) ;; ignore polymorphic
-  (match (group-by pstate-tr proper-states)
-    [(list) #f]
-    [(list group)
-     (define tr (pstate-tr (car group)))
-     (match tr [(list (? symbol?)) tr] [_ (error 'glr-parse "unsupported token reader: ~e" tr)])]
-    [groups
-     (define trs (map pstate-tr (map car groups)))
-     (if fail (fail trs) (error 'glr-parse "ambiguous token reader\n  candidates: ~e" trs))]))
-
-(define (with-tstack-pop-values tsk arity k)
-  ;;(check-state-at-top? 'with-stack-pop-values tsk)
-  (let loop ([tsk tsk] [arity arity] [acc null])
-    (cond [(zero? arity) (k tsk acc)]
-          [else (with-tstack-look tsk 2
-                  (lambda (s1 v2 tsk**) (loop tsk** (sub1 arity) (cons v2 acc))))])))
