@@ -93,6 +93,7 @@
   (define DEBUG? #f)
   (define KEEP-FAIL? #f)
   (define-syntax-rule (push! var value) (set! var (cons value var)))
+  (define-syntax-rule (dprintf fmt arg ...) (when DEBUG? (eprintf fmt arg ...)))
   (define (get-state n) (vector-ref states n))
   (define (get-val n) (vector-ref vals n))
 
@@ -114,24 +115,31 @@
     ;;(check-state-at-top? 'run-until-look/1 sk)
     (with-tstack sk [st vsk*] (run-until-look* st vsk* next-tok)))
   (define (run-until-look* st vsk* next-tok)
-    (when DEBUG? (eprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st)))
+    (dprintf "\nR2L STATE = #~v, ~s\n" (pstate-index st) (pstate-label st))
     (cond [(and (eq? (pstate-accept st) 'true))
            ;; we got here by a shift; discard shift and return state
            ;;(check-value-at-top? 'run-until-look/2 vsk*)
+           (dprintf "-- R2L #~s accept\n" (pstate-index st))
            (with-tstack vsk* [v1 s2 v3 sk**]
              (push! done (tok-v v3)))]
           [(and (eq? (pstate-accept st) 'virtual) (memq mode '(first-done)))
            ;;(check-value-at-top? 'run-until-look/3 vsk*)
            ;; we got here by a goto; result is first value
+           (dprintf "-- R2L #~s virtual accept\n" (pstate-index st))
            (with-tstack vsk* [v1 sk**]
              (push! done (tok-v v1)))]
           [(pstate-lookahead st)
            => (lambda (lookahead)
-                (cond [next-tok (look* #f st vsk* next-tok)]
+                (cond [next-tok
+                       (dprintf "-- R2L #~s lookahead (~v)\n" (pstate-index st) (tok-t next-tok))
+                       (look* #f st vsk* next-tok)]
                       [else (push! ready (cons st vsk*))]))]
           [else
-           (for ([red (pstate-reduce st)])
+           (for ([red (pstate-reduce st)] [i (in-naturals)])
+             (dprintf "-- R2L #~s reduction ~s/~s\n"
+                      (pstate-index st) (add1 i) (length (pstate-reduce st)))
              (reduce st vsk* red next-tok))
+           (dprintf "-- R2L #~s continue (~s)\n" (pstate-index st) (and next-tok (tok-t next-tok)))
            (cond [next-tok (look* #f st vsk* next-tok)]
                  [(not (hash-empty? (pstate-shift st)))
                   (push! ready (cons st vsk*))])]))
@@ -143,7 +151,7 @@
       (lambda (sk** args)
         ;;(check-state-at-top? 'reduce/2 sk**)
         (define value (apply (get-val action) args))
-        (when DEBUG? (eprintf "REDUCE(~s): ~v\n" nt value))
+        (dprintf "REDUCE(~s): ~v\n" nt value)
         (cond [(filter:reject? value)
                (when KEEP-FAIL? (push! failed (cons (tok nt value) sk**)))]
               [else (goto (tok nt value) sk** next-tok)]))))
@@ -151,22 +159,27 @@
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
     (define tr (stacks-consistent-tr sks))
     (define next-tok (get-next-token tr))
+    (dprintf "LOOK: read ~v\nSTATES: ~v\n\n"
+             next-tok (map pstate-index (map car sks)))
     (for ([sk (in-list sks)])
       (match-define (cons st vsk*) sk)
       (look* sk st vsk* next-tok)))
   (define (look* sk st vsk* next-tok) ;; sk = (cons st vsk*) or #f, saves re-alloc
     ;;(check-value-at-top? 'shift/1 vsk*)
     (define reds (hash-ref (or (pstate-lookahead st) #hash()) (tok-t next-tok) null))
-    (for ([red (in-list reds)]) (reduce st vsk* red next-tok))
+    (for ([red (in-list reds)] [i (in-naturals)])
+      (dprintf "-- L #~s reduction ~s/~s\n" (pstate-index st) (add1 i) (length reds))
+      (reduce st vsk* red next-tok))
+    (dprintf "-- L #~s continue (~v)\n" (pstate-index st) (tok-t next-tok))
     (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
            => (lambda (next-state)
-                (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
+                (dprintf "SHIFT ~v, #~s\n" next-tok next-state)
                 (let ([sk (or sk (cons st vsk*))])
                   (run-until-look* (get-state next-state) (list* next-tok sk) #f)))]
           ;; Accept pre-parsed non-terminals from the lexer too.
           [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
            => (lambda (next-state)
-                (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
+                (dprintf "SHIFT ~v, #~s\n" next-tok next-state)
                 (let ([sk (or sk (cons st vsk*))])
                   (run-until-look* (get-state next-state) (list* next-tok sk) #f)))]
           [(null? reds)
@@ -175,19 +188,20 @@
   (define (goto reduced sk next-tok)
     (with-tstack sk [st vsk*]
       ;;(check-value-at-top? 'goto/1 vsk*)
-      (when DEBUG? (eprintf "RETURN VIA #~s\n" (pstate-index st)))
+      (dprintf "RETURN VIA #~s\n" (pstate-index st))
       (define next-state (hash-ref (pstate-goto st) (car reduced)))
-      (when DEBUG? (eprintf "GOTO ~v\n" next-state))
+      (dprintf "GOTO ~v\n" next-state)
       (run-until-look* (get-state next-state) (list* reduced st vsk*) next-tok)))
 
   (define (run-all-ready)
-    (when DEBUG? (eprintf "\n==== STEP ====\n"))
+    (dprintf "\n==== STEP ====\n")
     (define ready* (tjoin-on-cdrs ready))
     (set! ready null)
     (when #t (set! failed null))
     (look ready*))
 
   (run-until-look* (get-state 0) null #f)
+  (dprintf "\n==== START STEPPING ====\n")
   (let loop ()
     (cond [(and (memq mode '(first-done)) (pair? done)) done]
           [(null? ready) done]
