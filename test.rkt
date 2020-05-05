@@ -209,3 +209,21 @@
 
 (send lg10 parse (mktz s10c))
 (send gg10 parse* (mktz s10c))
+
+
+;; ========================================
+;; Disambiguation filters
+
+(eprintf "\nExample F 1\n")
+(define-grammar f1
+  #:start S
+  [S [() null]
+     [(A S) (cons $1 $2)]]
+  [A [(XS) (if (= (length $1) 1) $1 (filter:reject))]]
+  [XS [(x) (list $1)]
+      [(x XS) (cons $1 $2)]])
+(define fp1 (lr-parser #:grammar f1))
+
+(define sf1a '((x) (x) (x) (x)))
+;;(send fp1 parse (mktz sf1a))
+(send fp1 parse* (mktz sf1a))
