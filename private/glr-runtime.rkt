@@ -152,9 +152,11 @@
     (with-tstack-pop-values (cons st vsk*) arity
       (lambda (sk** args)
         ;;(check-state-at-top? 'reduce/2 sk**)
-        (define value (tok nt (apply (get-val action) args)))
-        (when DEBUG? (eprintf "REDUCE: ~v\n" value))
-        (goto value sk** next-tok))))
+        (define value (apply (get-val action) args))
+        (when DEBUG? (eprintf "REDUCE(~s): ~v\n" nt value))
+        (cond [(filter:reject? value)
+               (when KEEP-FAIL? (push! failed (cons (tok nt value) sk**)))]
+              [else (goto (tok nt value) sk** next-tok)]))))
 
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
     (define tr (pstates-consistent-tr (map car sks)))

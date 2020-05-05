@@ -6,7 +6,8 @@
 (provide (all-from-out "private/common.rkt")
          define-grammar
          lr-parser
-         ll1-parser)
+         ll1-parser
+         filter:reject)
 
 ;; ----------------------------------------
 ;; TO DO
