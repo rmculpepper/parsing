@@ -13,31 +13,6 @@
 ;; for cons-based lists) *and* head sharing (via TJoin).
 (struct TJoin (stacks) #:prefab)
 
-#|
-;; tstack-look : TStack Nat -> (NonemptyListof TStack)
-;; Returns list of tstacks, each of which starts with n conses.
-(define (tstack-look tsk n)
-  (cond [(zero? n) (list tsk)]
-        [else (match tsk
-                ['() (error 'tstack-look "empty stack")]
-                [(cons x tsk*)
-                 (for/list ([tail (in-list (tstack-look tsk* (sub1 n)))])
-                   (cons x tail))]
-                [(TJoin tsks*)
-                 (append* (for/list ([tsk* (in-list tsks*)]) (tstack-look tsk* n)))])]))
-
-(define (with-tstack-look tsk n k)
-  ;; (eprintf "with-tstack-look : ~s, ~v\n" n tsk)
-  (let loop ([tsk tsk] [n n] [acc null])
-    (cond [(zero? n) (apply k (reverse (cons tsk acc)))]
-          [else (match tsk
-                  ['() (error 'with-tstack-look "empty stack")]
-                  [(cons x tsk*)
-                   (loop tsk* (sub1 n) (cons x acc))]
-                  [(TJoin tsks*)
-                   (for ([tsk* (in-list tsks*)]) (loop tsk* n acc))])])))
-|#
-
 (define-syntax with-tstack
   (syntax-rules ()
     [(with-tstack tsk (tsk-var) . body)
@@ -50,24 +25,6 @@
     [(cons x tsk*) (f x tsk*)]
     [(TJoin tsks) (for ([tsk (in-list tsks)]) (tstack-split tsk f))]
     ['() (error 'tstack-split "empty stack")]))
-
-#|
-;; tstack-join : (NonemptyListof TStack) -> TStack
-(define (tstack-join tsks) (if (singleton? tsks) (car tsks) (tstack-join* tsks)))
-(define (tstack-join* tsks)
-  (define join-tsks (filter TJoin? tsks))
-  (define cons-tsks (filter cons? tsks))
-  (define null-tsks (filter null? tsks))
-  (cond [(pair? cons-tsks)
-         (define cons-tsk* (tstack-join/cons (group-by car cons-tsks)))
-         (tjoin (cons cons-tsk* (append* null-tsks (map TJoin-stacks join-tsks))))]
-        [else (tjoin (append* null-tsks (map TJoin-stacks join-tsks)))]))
-(define (tstack-join/cons cons-groups)
-  (tjoin (for/list ([group (in-list cons-groups)])
-           (cond [(singleton? group) (car group)]
-                 [else (cons (caar group) (tstack-join (map cdr group)))]))))
-(define (tjoin tsks) (if (singleton? tsks) (car tsks) (TJoin tsks)))
-|#
 
 ;; tjoin-on-cdrs : (NEListof TStack) -> (NEListof TStack)
 ;; The input stacks must be pairs (ie, not empty, not TJoins), and
