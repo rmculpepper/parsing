@@ -24,7 +24,8 @@
   (define vals* (list->vector (append (vector->list vals) (list (lambda (s e) s)))))
   (grammar START (cons (def START (list start-p)) defs) vals))
 
-(define DOT (string->uninterned-symbol "◇"))
+(define DOT (string->uninterned-symbol "•"))
+;;(define DOT (string->uninterned-symbol "◇"))
 
 ;; An LR0-Prod is (cons Nat Prod), where the nat is in [0, (vector-length item)]
 ;; and represents the index of the dot in the production's item.
