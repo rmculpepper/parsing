@@ -5,14 +5,20 @@
          "lr-common.rkt")
 (provide (all-defined-out))
 
-;; A StateTopStack is (cons PState ValueTopStack)
-;; A ValueTopStack is null or (cons Token StateTopStack)
-;; -- note, reduced nonterminals are also stored as Tokens
+;; StStack = (cons PState VStack)
+;; VStack = (cons Token StStack) | null
+;; -- Note: reduced nonterminals are also stored as Tokens
+
+;; conventions:
+;; - stack : StStack
+;; - vsk*  : VStack
 
 (define (lr-parse states vals tz)
   (define DEBUG? #f)
+  (define-syntax-rule (dprintf fmt arg ...) (when DEBUG? (eprintf fmt arg ...)))
   (define (get-state n) (vector-ref states n))
   (define (get-val n) (vector-ref vals n))
+
   (define (get-token peek? tr stack)
     (cond [(symbol? (car tr))
            (tz peek? (car tr) (get-token-args (cdr tr) stack))]
@@ -28,7 +34,7 @@
 
   (define (loop stack)
     (define st (car stack))
-    (when DEBUG? (eprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st)))
+    (dprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st))
     (cond [(pstate-accept st)
            => (lambda (accept)
                 ;; Did we get here by a shift or a goto?
@@ -39,39 +45,49 @@
            => (lambda (lookahead)
                 (define next-tok (get-token #t (pstate-tr st) stack))
                 (cond [(hash-ref lookahead (tok-t next-tok) #f)
-                       => (lambda (reds) (reduce st stack (car reds)))]
-                      [else (shift st stack)]))]
+                       => (lambda (reds) (reduce stack (car reds)))]
+                      [else (shift stack)]))]
+          ;; ??? reduce vs shift priority?
           [(pair? (pstate-reduce st))
-           (reduce st stack (car (pstate-reduce st)))]
-          [else (shift st stack)]))
+           (reduce stack (car (pstate-reduce st)))]
+          [else (shift stack)]))
 
-  (define (reduce st stack red)
+  (define (reduce stack red)
     (match-define (reduction nt index arity action) red)
     (define-values (args stack*) (pop-values arity stack))
     (define value (tok nt (apply (get-val action) args)))
-    (when DEBUG? (eprintf "REDUCE: ~v\n" value))
-    (goto value stack*))
+    (cond [(filter:reject? (tok-v value))
+           (fail 'reduce stack value)]
+          [else
+           (dprintf "REDUCE: ~v\n" nt value)
+           (goto value stack*)]))
 
-  (define (shift st stack)
+  (define (shift stack)
+    (define st (car stack))
     (define next-tok (get-token #f (pstate-tr st) stack))
     (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
            => (lambda (next-state)
-                (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
+                (dprintf "SHIFT ~v, #~s\n" next-tok next-state)
                 (loop (list* (get-state next-state) next-tok stack)))]
           ;; Accept pre-parsed non-terminals from the lexer too.
           [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
            => (lambda (next-state)
                 (loop (list* (get-state next-state) next-tok stack)))]
-          [else (error 'lr-parse "next = ~v, state = ~v" next-tok (car stack))]))
+          [else (fail 'shift stack next-tok)]))
 
   (define (goto reduced stack)
     (define st (car stack))
-    (when DEBUG? (eprintf "RETURN VIA #~s\n" (pstate-index st)))
-    (define next-state (hash-ref (pstate-goto st) (car reduced)))
-    (when DEBUG? (eprintf "GOTO ~v\n" next-state))
+    (dprintf "RETURN VIA #~s\n" (pstate-index st))
+    (define next-state (hash-ref (pstate-goto st) (tok-t reduced)))
+    (dprintf "GOTO ~v\n" next-state)
     (loop (list* (get-state next-state) reduced stack)))
 
+  (define (fail how stack next-tok)
+    (error 'lr-parse "~s ~v, state = ~v" how next-tok (car stack)))
+
   (loop (list (get-state 0))))
+
+;; ----------------------------------------
 
 (define (pop-values arity stack) ;; produces values in original order
   (let loop ([arity arity] [stack stack] [acc null])
