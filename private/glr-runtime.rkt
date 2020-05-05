@@ -53,18 +53,21 @@
       (lambda (st tsk*) (unless (pair? st) (error who "top of stack is not value: ~v" tsk))))))
 |#
 
+;; stacks-consistent-tr : (Listof StStack) -> TR
 ;; FIXME: in GLR, if token arguments, *values* must be consistent, not just exprs
 ;; For now, just disallow parameters.
-(define (pstates-consistent-tr states [fail #f])
-  (define proper-states (filter pstate-tr states)) ;; ignore polymorphic
-  (match (group-by pstate-tr proper-states)
-    [(list) #f]
-    [(list group)
-     (define tr (pstate-tr (car group)))
-     (match tr [(list (? symbol?)) tr] [_ (error 'glr-parse "unsupported token reader: ~e" tr)])]
-    [groups
-     (define trs (map pstate-tr (map car groups)))
-     (if fail (fail trs) (error 'glr-parse "ambiguous token reader\n  candidates: ~e" trs))]))
+(define (stacks-consistent-tr sks)
+  (define (safe-tr? x) (match x [(list (? symbol?)) #t] [_ #f]))
+  (match sks
+    #;[(list sk) (pstate-tr (car sk))] ;; unsound: if params, rest of stack may be tjoin
+    [sks
+     (for/fold ([seen-tr #f]) ([sk (in-list sks)])
+       (define tr (pstate-tr (car sk)))
+       (cond [(or (equal? tr seen-tr) (eq? tr #f)) seen-tr]
+             [(safe-tr? tr)
+              (cond [(or (eq? seen-tr #f) (equal? seen-tr tr)) tr]
+                    [else (error 'glr-parse "ambiguous token reader\n  candidates: ~e"
+                                 (remove-duplicates (map pstate-tr (map car sks))))])]))]))
 
 ;; ============================================================
 
@@ -146,7 +149,7 @@
               [else (goto (tok nt value) sk** next-tok)]))))
 
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
-    (define tr (pstates-consistent-tr (map car sks)))
+    (define tr (stacks-consistent-tr sks))
     (define next-tok (get-next-token tr))
     (for ([sk (in-list sks)])
       (match-define (cons st vsk*) sk)
