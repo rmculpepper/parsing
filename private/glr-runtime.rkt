@@ -13,6 +13,7 @@
 ;; for cons-based lists) *and* head sharing (via TJoin).
 (struct TJoin (stacks) #:prefab)
 
+#|
 ;; tstack-look : TStack Nat -> (NonemptyListof TStack)
 ;; Returns list of tstacks, each of which starts with n conses.
 (define (tstack-look tsk n)
@@ -35,10 +36,24 @@
                    (loop tsk* (sub1 n) (cons x acc))]
                   [(TJoin tsks*)
                    (for ([tsk* (in-list tsks*)]) (loop tsk* n acc))])])))
+|#
 
+(define-syntax with-tstack
+  (syntax-rules ()
+    [(with-tstack tsk (tsk-var) . body)
+     (let ([tsk-var tsk]) . body)]
+    [(with-tstack tsk (elem-var . more) . body)
+     (tstack-split tsk (lambda (elem-var tsk-rest) (with-tstack tsk-rest more . body)))]))
+
+(define (tstack-split tsk f)
+  (match tsk
+    [(cons x tsk*) (f x tsk*)]
+    [(TJoin tsks) (for ([tsk (in-list tsks)]) (tstack-split tsk f))]
+    ['() (error 'tstack-split "empty stack")]))
+
+#|
 ;; tstack-join : (NonemptyListof TStack) -> TStack
 (define (tstack-join tsks) (if (singleton? tsks) (car tsks) (tstack-join* tsks)))
-
 (define (tstack-join* tsks)
   (define join-tsks (filter TJoin? tsks))
   (define cons-tsks (filter cons? tsks))
@@ -47,13 +62,27 @@
          (define cons-tsk* (tstack-join/cons (group-by car cons-tsks)))
          (tjoin (cons cons-tsk* (append* null-tsks (map TJoin-stacks join-tsks))))]
         [else (tjoin (append* null-tsks (map TJoin-stacks join-tsks)))]))
-
 (define (tstack-join/cons cons-groups)
   (tjoin (for/list ([group (in-list cons-groups)])
            (cond [(singleton? group) (car group)]
                  [else (cons (caar group) (tstack-join (map cdr group)))]))))
-
 (define (tjoin tsks) (if (singleton? tsks) (car tsks) (TJoin tsks)))
+|#
+
+;; tjoin-on-cdrs : (NEListof TStack) -> (NEListof TStack)
+;; The input stacks must be pairs (ie, not empty, not TJoins), and
+;; each stack in the result is also a pair.
+(define (tjoin-on-cdrs stacks)
+  (match stacks
+    [(list _) stacks]
+    [(list s1 s2)
+     (cond [(eq? (car s1) (car s2))
+            (list (cons (car s1) (TJoin (list (cdr s1) (cdr s2)))))]
+           [else stacks])]
+    [else
+     (for/list ([group (in-list (group-by car stacks eq?))])
+       (cond [(singleton? group) (car group)]
+             [else (cons (caar group) (TJoin (map cdr group)))]))]))
 
 (define (singleton? x) (and (pair? x) (null? (cdr x))))
 
@@ -95,8 +124,8 @@
   ;;(check-state-at-top? 'with-stack-pop-values sk)
   (let loop ([sk sk] [arity arity] [acc null])
     (cond [(zero? arity) (k sk acc)]
-          [else (with-tstack-look sk 2
-                  (lambda (s1 v2 sk**) (loop sk** (sub1 arity) (cons v2 acc))))])))
+          [else (with-tstack sk [s1 v2 sk**]
+                  (loop sk** (sub1 arity) (cons v2 acc)))])))
 
 ;; ----------------------------------------
 
@@ -119,32 +148,33 @@
   (define done null) ;; mutated; (Listof Result)
 
   ;; run-until-look : StStack ?? -> Void
-  ;; runs and adds to ready
+  ;; Runs each "thread" in sk until it needs input and adds to ready
+  ;; list. A thread may fork or fail.
   (define (run-until-look sk next-tok)
-    ;;(check-state-at-top? 'run-until-look/1 ssk)
-    (with-tstack-look sk 1
-      (lambda (st vsk*)
-        (when DEBUG? (eprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st)))
-        (cond [(and (eq? (pstate-accept st) 'true))
-               ;; we got here by a shift; discard shift and return state
-               ;;(check-value-at-top? 'run-until-look/2 vsk*)
-               (with-tstack-look vsk* 3
-                 (lambda (v1 s2 v3 sk**) (push! done (tok-v v3))))]
-              [(and (eq? (pstate-accept st) 'virtual) (memq mode '(first-done)))
-               ;;(check-value-at-top? 'run-until-look/3 vsk*)
-               ;; we got here by a goto; result is first value
-               (with-tstack-look vsk* 1
-                 (lambda (v1 sk**) (push! done (tok-v v1))))]
-              [(pstate-lookahead st)
-               => (lambda (lookahead)
-                    (cond [next-tok (look* st vsk* next-tok)]
-                          [else (push! ready (cons st vsk*))]))]
-              [else
-               (for ([red (pstate-reduce st)])
-                 (reduce st vsk* red next-tok))
-               (cond [next-tok (look* st vsk* next-tok)]
-                     [(not (hash-empty? (pstate-shift st)))
-                      (push! ready (cons st vsk*))])]))))
+    ;;(check-state-at-top? 'run-until-look/1 sk)
+    (with-tstack sk [st vsk*] (run-until-look* st vsk* next-tok)))
+  (define (run-until-look* st vsk* next-tok)
+    (when DEBUG? (eprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st)))
+    (cond [(and (eq? (pstate-accept st) 'true))
+           ;; we got here by a shift; discard shift and return state
+           ;;(check-value-at-top? 'run-until-look/2 vsk*)
+           (with-tstack vsk* [v1 s2 v3 sk**]
+             (push! done (tok-v v3)))]
+          [(and (eq? (pstate-accept st) 'virtual) (memq mode '(first-done)))
+           ;;(check-value-at-top? 'run-until-look/3 vsk*)
+           ;; we got here by a goto; result is first value
+           (with-tstack vsk* [v1 sk**]
+             (push! done (tok-v v1)))]
+          [(pstate-lookahead st)
+           => (lambda (lookahead)
+                (cond [next-tok (look* #f st vsk* next-tok)]
+                      [else (push! ready (cons st vsk*))]))]
+          [else
+           (for ([red (pstate-reduce st)])
+             (reduce st vsk* red next-tok))
+           (cond [next-tok (look* #f st vsk* next-tok)]
+                 [(not (hash-empty? (pstate-shift st)))
+                  (push! ready (cons st vsk*))])]))
 
   (define (reduce st vsk* red next-tok)
     ;;(check-value-at-top? 'reduce/1 vsk*)
@@ -163,40 +193,41 @@
     (define next-tok (get-next-token tr))
     (for ([sk (in-list sks)])
       (match-define (cons st vsk*) sk)
-      (look* st vsk* next-tok)))
-  (define (look* st vsk* next-tok)
+      (look* sk st vsk* next-tok)))
+  (define (look* sk st vsk* next-tok) ;; sk = (cons st vsk*) or #f, saves re-alloc
     ;;(check-value-at-top? 'shift/1 vsk*)
     (define reds (hash-ref (or (pstate-lookahead st) #hash()) (tok-t next-tok) null))
     (for ([red (in-list reds)]) (reduce st vsk* red next-tok))
     (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
            => (lambda (next-state)
                 (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
-                (run-until-look (list* (get-state next-state) next-tok st vsk*) #f))]
+                (let ([sk (or sk (cons st vsk*))])
+                  (run-until-look* (get-state next-state) (list* next-tok sk) #f)))]
           ;; Accept pre-parsed non-terminals from the lexer too.
           [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
            => (lambda (next-state)
                 (when DEBUG? (eprintf "SHIFT ~v, #~s\n" next-tok next-state))
-                (run-until-look (list* (get-state next-state) next-tok st vsk*) #f))]
+                (let ([sk (or sk (cons st vsk*))])
+                  (run-until-look* (get-state next-state) (list* next-tok sk) #f)))]
           [(null? reds)
            (when KEEP-FAIL? (push! failed (list* next-tok st vsk*)))]))
 
   (define (goto reduced sk next-tok)
-    (with-tstack-look sk 1
-      (lambda (st vsk*)
-        ;;(check-value-at-top? 'goto/1 vsk*)
-        (when DEBUG? (eprintf "RETURN VIA #~s\n" (pstate-index st)))
-        (define next-state (hash-ref (pstate-goto st) (car reduced)))
-        (when DEBUG? (eprintf "GOTO ~v\n" next-state))
-        (run-until-look (list* (get-state next-state) reduced st vsk*) next-tok))))
+    (with-tstack sk [st vsk*]
+      ;;(check-value-at-top? 'goto/1 vsk*)
+      (when DEBUG? (eprintf "RETURN VIA #~s\n" (pstate-index st)))
+      (define next-state (hash-ref (pstate-goto st) (car reduced)))
+      (when DEBUG? (eprintf "GOTO ~v\n" next-state))
+      (run-until-look* (get-state next-state) (list* reduced st vsk*) next-tok)))
 
   (define (run-all-ready)
     (when DEBUG? (eprintf "\n==== STEP ====\n"))
-    (define ready* ready)
+    (define ready* (tjoin-on-cdrs ready))
     (set! ready null)
     (when #t (set! failed null))
     (look ready*))
 
-  (run-until-look (list (get-state 0)) #f)
+  (run-until-look* (get-state 0) null #f)
   (let loop ()
     (cond [(and (memq mode '(first-done)) (pair? done)) done]
           [(null? ready) done]
