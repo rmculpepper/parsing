@@ -4,6 +4,8 @@
 (provide (all-defined-out)
          (all-from-out "main.rkt"))
 
+(define PRINT? #f)
+
 (define tok* (case-lambda [(t) (tok t t)] [(t v) (tok t v)]))
 (define (apply-tok* v) (apply tok* v))
 
@@ -27,10 +29,11 @@
   [MaybeObj [() null]
             [(Nphr) #:> $1]])
 (define gg1 (lr-parser #:grammar g1))
-(send gg1 print)
+(when PRINT? (send gg1 print))
 
 (define s1a '((adj) (adj) (noun) (verb) (adj) (noun) (conj) (noun) (adv) (verb)))
 (send gg1 parse (mktz s1a))
+(send gg1 parse* (mktz s1a))
 
 ;; --------------------
 
@@ -41,12 +44,15 @@
   [Expr [(atom) #:> $1]
         [(lparen Expr op Expr rparen) (list $2 $3 $4)]])
 (define gg2 (lr-parser #:grammar g2))
-(send gg2 print)
+(when PRINT? (send gg2 print))
+
+(define lg2 (ll1-parser #:grammar g2))
+(when PRINT? (send lg2 print))
 
 (define s2a '((lparen) (atom 5) (op +) (atom 6) (rparen)))
 (send gg2 parse (mktz s2a))
-
-(define lg2 (ll1-parser #:grammar g2))
+(send gg2 parse* (mktz s2a))
+(send lg2 parse (mktz s2a))
 
 ;; --------------------
 
@@ -58,11 +64,11 @@
      [(y Y) #:auto]]
   [Z [(y) #:auto]])
 (define gg3 (lr-parser #:grammar g3))
-(send gg3 print)
+(when PRINT? (send gg3 print))
 
 (define s3a '((x) (y) (y) (y) (y)))
-;; This example has LR(1) conflict.
-;;(send gg3 parse (mktz s3a))
+(printf "-- LR(1) conflict\n") ;; skip parse
+(send gg3 parse* (mktz s3a))
 
 ;; --------------------
 
@@ -73,10 +79,11 @@
   [A [(a) #:auto]
      [(A b) #:auto]])
 (define gg4 (lr-parser #:grammar g4))
-(send gg4 print)
+(when PRINT? (send gg4 print))
 
 (define s4a '((a) (b) (b) (b)))
 (send gg4 parse (mktz s4a))
+(send gg4 parse* (mktz s4a))
 
 ;; --------------------
 
@@ -87,10 +94,11 @@
   [E [(a) #:> $1]
      [(E op E) #:> (list $1 $2 $3)]])
 (define gg5 (lr-parser #:grammar g5))
-(send gg5 print)
+(when PRINT? (send gg5 print))
 
 (define s5a '((a) (op) (a) (op) (a)))
 (send gg5 parse (mktz s5a))
+(send gg5 parse* (mktz s5a))
 
 ;; --------------------
 
@@ -103,10 +111,11 @@
   [B [(a) #:auto]]
   [C [(a) #:auto]])
 (define gg6 (lr-parser #:grammar g6))
-(send gg6 print)
+(when PRINT? (send gg6 print))
 
 (define s6a '((a) (y)))
 (send gg6 parse (mktz s6a))
+(send gg6 parse* (mktz s6a))
 
 ;; --------------------
 
@@ -120,10 +129,11 @@
   [T [(number) #:auto]
      [(lparen E rparen) #:auto]])
 (define gg7 (lr-parser #:grammar g7))
-(send gg7 print)
+(when PRINT? (send gg7 print))
 
 (define s7a '((number 5) (minus) (number 2) (minus) (number 1)))
 (send gg7 parse (mktz s7a))
+(send gg7 parse* (mktz s7a))
 
 ;; --------------------
 
@@ -136,9 +146,11 @@
   [A [(x) #:auto]]
   [B [(x) #:auto]])
 (define gg8 (lr-parser #:grammar g8))
-(send gg8 print)
+(when PRINT? (send gg8 print))
 
-(send gg8 parse (mktz '((x) (a) (x) (b))))
+(define s8a '((x) (a) (x) (b)))
+(send gg8 parse (mktz s8a))
+(send gg8 parse* (mktz s8a))
 
 ;; --------------------
 
@@ -152,10 +164,16 @@
      [(b d a) #:auto]]
   [A [(d) #:auto]])
 (define gg9 (lr-parser #:grammar g9))
-(send gg9 print)
+(when PRINT? (send gg9 print))
 
-(send gg9 parse (mktz '((d) (c))))
-(send gg9 parse (mktz '((b) (d) (a))))
+(define s9a '((d) (c)))
+(define s9b '((b) (d) (a)))
+
+(send gg9 parse (mktz s9a))
+(send gg9 parse* (mktz s9a))
+
+(send gg9 parse (mktz s9b))
+(send gg9 parse* (mktz s9b))
 
 ;; --------------------
 
@@ -173,13 +191,21 @@
   [F [(A) #:auto]]
   [A [() #:auto]])
 (define gg10 (lr-parser #:grammar g10))
-(send gg10 print)
+(when PRINT? (send gg10 print))
 
-;;(send gg10 parse (mktz '...))
+(define lg10 (ll1-parser #:grammar g10))
+(when PRINT? (send lg10 print))
 
+(define s10a '((lparen) (rparen)))
+(define s10b '((rparen) (rbracket))) ;; -- BAD, contains extra token!
+(define s10c '((rparen)))
 
+(printf "-- not LALR(1)\n") ;; skip parse
+(send lg10 parse (mktz s10a))
+(send gg10 parse* (mktz s10a))
 
+(send lg10 parse (mktz s10b))
+(send gg10 parse* (mktz s10b))
 
-
-;;[S #:= (...)
-;;   #:> ...]
+(send lg10 parse (mktz s10c))
+(send gg10 parse* (mktz s10c))
