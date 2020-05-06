@@ -3,6 +3,7 @@
                      racket/syntax
                      syntax/id-table
                      syntax/transformer
+                     syntax/free-vars
                      (rename-in syntax/parse [attribute $])
                      "../util/datum-to-expr.rkt"
                      "grammar-rep.rkt")
@@ -11,17 +12,16 @@
 
 ;; In grammar specification, an Element is one of
 ;; - [name NT]
-;; - [name T #:read (TR Expr ...)]  -- where Expr = name | (quote Datum)
-;; - [name T #:apply (RacketVariable Expr ...)]
-;; where TExpr = name | (quote Datum).
+;; - [name T #:read (TR Expr ...)]
+;; - [name T #:pure Expr)]
 
 ;; In addition, the following abbreviated Elements are allowed:
-;; - NT                             -- short for [_ NT]
-;; - T                              -- short for [_ T #:read (default)]
-;; - [name T]                       -- short for [name T #:read (default)]
-;; - [name T #:read TR]             -- short for [name T #:read (TR)]
-;; - [T #:read (TR TExpr ...)]      -- short for [_ T #:read (TR TExpr ...)]
-;; - [T #:apply (RacketVar TExpr ...)] -- short for [_ name T #:apply (RacketVar TExpr ...)]
+;; - NT                         -- short for [_ NT]
+;; - T                          -- short for [_ T #:read (default)]
+;; - [name T]                   -- short for [name T #:read (default)]
+;; - [name T #:read TR]         -- short for [name T #:read (TR)]
+;; - [T #:read (TR Expr ...)]   -- short for [_ T #:read (TR Expr ...)]
+;; - [T #:pure Expr]            -- short for [_ name T #:pure Expr]
 
 (begin-for-syntax
   (define intern-table (make-parameter #f)) ;; free-id-table[Id]
@@ -51,18 +51,19 @@
 
   (define-splicing-syntax-class action #:attributes (mkast)
     #:description "action routine"
-    (pattern (~seq #:auto)
+    (pattern (~seq #:auto ~!)
              #:attr mkast (lambda (nt index venv)
                             (add-value! #`(mk-auto-action (quote #,nt) (quote #,index)))))
-    (pattern (~seq #:apply proc:expr)
+    (pattern (~seq #:apply ~! proc:expr)
              #:attr mkast (lambda (nt index venv) (add-value! #'(mk-action proc))))
-    (pattern (~seq (~optional #:>) ~! e:expr ...+)
+    (pattern (~seq (~optional (~seq #:> ~!)) e:expr ...+)
              #:attr mkast (lambda (nt index venv) (add-value! (wrap-expr #'(let () e ...) venv)))))
 
   (define-syntax-class elemseq #:attributes (mkast)
     #:description "element sequence"
     (pattern (e:elem ...)
              #:attr mkast (lambda (nt?)
+                            ;; venv : (Listof Identifier), most recent (top of stack) first
                             (for/fold ([acc null] [venv null]
                                        #:result (values (list->vector (reverse acc)) venv))
                                       ([e-mkast (in-list ($ e.mkast))]
@@ -100,22 +101,27 @@
                             ;; FIXME: add tk to list to check at runtime?
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
                             (telem ($ t.ast) (list ($ tk.ast)))))
-    (pattern (~seq t:token-name #:read (tf:symbol arg:texpr ...))
+    (pattern (~seq t:token-name #:read (tf:symbol arg:expr ...))
+             #:with args:user-expr #'(list arg ...)
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tf and arity to list to check at runtime?
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
-                            (telem ($ t.ast) (cons ($ tf.ast) (map-apply ($ arg.mkast) venv)))))
-    (pattern (~seq t:token-name #:apply (re:id arg:texpr ...))
+                            (telem ($ t.ast) (cons ($ tf.ast) (($ args.mkast) venv)))))
+    (pattern (~seq t:token-name #:pure e:user-expr)
              #:attr mkast (lambda (nt? venv)
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
-                            (record-disappeared-uses #'re)
-                            (let* ([re (free-id-table-ref! (intern-table) #'re #'re)]
-                                   [re-index (add-value! re)])
-                              (telem ($ t.ast)
-                                     (list* '#:apply (syntax-e re) re-index
-                                            (map-apply ($ arg.mkast) venv))))))
+                            (pure-elem ($ t.ast) (($ e.mkast) venv))))
     (pattern (~seq :t/nt)))
 
+  (define-syntax-class user-expr #:attributes (mkast)
+    #:description "user expression"
+    (pattern e:expr
+             #:attr mkast (lambda (venv)
+                            (define-values (fun refs)
+                              (expand/make-user-expr #'e venv))
+                            (expr:user (add-value! fun) refs))))
+
+  #;
   (define-syntax-class texpr #:attributes (mkast)
     #:description "token-function argument"
     #:literals (quote)
@@ -149,10 +155,30 @@
       (let ([vvar (token-variable-vvar self)] [tvar (token-variable-tvar self)])
         ((make-variable-like-transformer #`(get-token-value '#,vvar #,tvar)) stx))))
 
+  (define (expand/make-user-expr expr venv)
+    (syntax-parse (local-expand (wrap-expr #'e venv) 'expression null)
+      #:literal-sets (kernel-literals)
+      [(#%plain-lambda (tvar ...) body ...)
+       (define tvars (syntax->list #'(tvar ...)))
+       (define used-tvar-h
+         (for/fold ([h (hasheq)])
+                   ([var (in-list (free-vars #'(begin body ...)))])
+           (cond [(memf var tvars free-identifier=?)
+                  => (lambda (vs) (hash-set h (car vs) #t))]
+                 [else h])))
+       (values
+        (with-syntax ([(used-tvar ...)
+                       (filter (lambda (v) (hash-ref used-tvar-h v #f)) tvars)])
+          #'(#%plain-lambda (used-tvar ...) body ...))
+        (for/list ([tvar (in-list (reverse tvars))] [i (in-naturals)]
+                   #:when (hash-ref used-tvar-h tvar #f))
+          i))]))
+
   (define (wrap-expr expr venv)
-    (define tok-vars (generate-temporaries venv))
+    (define rvenv (reverse venv)) ;; arguments are first-bound to last-bound
+    (define tok-vars (generate-temporaries rvenv))
     (define bindings
-      (for/list ([tvar (in-list tok-vars)] [vvar (in-list (reverse venv))] #:when (identifier? vvar))
+      (for/list ([tvar (in-list tok-vars)] [vvar (in-list rvenv)] #:when (identifier? vvar))
         #`[#,vvar (token-variable (quote-syntax #,vvar) (quote-syntax #,tvar))]))
     #`(lambda #,tok-vars (letrec-syntax #,bindings #,expr)))
 

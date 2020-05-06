@@ -1,6 +1,6 @@
 #lang racket/base
 (require racket/match
-         "grammar-rep.rkt")
+         (submod "grammar-rep.rkt" terminals-and-nonterminals))
 (provide (all-defined-out) EOF)
 
 ;; ============================================================
@@ -25,6 +25,13 @@
     [(? ok-terminal? t) (error who "token has no payload\n  token: ~e" t)]))
 
 (define EOF-tok EOF)
+
+;; ============================================================
+
+;; A TokenReader is one of
+;; - #f
+;; - (cons Symbol (Listof Any))
+
 
 ;; ============================================================
 
