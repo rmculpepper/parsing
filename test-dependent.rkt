@@ -8,6 +8,8 @@
 
 (pretty-print-columns 200)
 
+(define PRINT? #f)
+
 ;; ============================================================
 
 (eprintf "\nExample d1:\n")
@@ -18,7 +20,7 @@
            [([msg2 #:read MsgByte] [d data #:read (read-data '8)])
             #:> (list 2 d)]])
 (define dg1 (lr-parser #:grammar d1))
-(send dg1 print)
+(when PRINT? (send dg1 print))
 
 (define sd1a '((msg1) (int4 4)))
 (define sd1b '((msg2)))
@@ -43,7 +45,7 @@
   [Word [([c letter]) #:> (list c)]
         [([c letter] [w Word]) #:> (cons c w)]])
 (define dg2 (lr-parser #:grammar d2))
-(send dg2 print)
+(when PRINT? (send dg2 print))
 
 (define (d2-tokenizer str)
   (define in (open-input-string str))
@@ -63,7 +65,7 @@
             [([s Setting]) #:> (list s)]]
   [Setting [([c letter #:read char] [#\= #:read char] [w word]) #:> (list c w)]])
 (define dg3 (lr-parser #:grammar d3))
-(send dg3 print)
+(when PRINT? (send dg3 print))
 
 (define (d3-tokenizer str)
   (define in (open-input-string str))
@@ -87,7 +89,7 @@
   [S [([m byte] [#t #:apply (zero? m)]) #:> 'none]
      [([n byte] [#f #:apply (zero? n)] [v byte]) #:> v]])
 (define dg4 (lr-parser #:grammar d4))
-(send dg4 print)
+(when PRINT? (send dg4 print))
 
 (define (d4-tokenizer bstr)
   (define in (open-input-bytes bstr))
