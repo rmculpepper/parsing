@@ -197,9 +197,7 @@
         (case lookahead-mode
           [(lr0) (lambda (st reduce) #f)]
           [(slr1) (lambda (st reduce) (slr1-lookahead reduce))]
-          [(lalr1) (let* ([g* (reify-lr0)] [gg* (new grammar-base% (g g*))])
-                     (define (follow st nt) (send gg* nt-follow (cons (state-index st) nt)))
-                     (lambda (st reduce) (lalr1-lookahead follow st reduce)))]))
+          [(lalr1) (make-lalr1-lookahead)]))
       (define (state->pstate st index)
         (define label (lr-state-label st))
         (define shift (for/hash ([(elem st) (in-hash (state-edges st))] #:when (telem? elem))
@@ -235,20 +233,26 @@
       ;; FIXME: if lookaheads, should be consistent with goto successors (??)
       pstates)
 
-    (define/public (pstate-lr0-conflicts st)
+    (define/public (pstate-conflicts st use-lookahead?)
       (match-define (pstate index _ _ shift reduce _ _ _) st)
-      (cond [(null? reduce) null]
-            [(and (hash-empty? shift) (<= (length reduce) 1)) null]
-            [(hash-empty? shift) (list (conflict index #f #f reduce))]
-            [else (list (conflict index #f #t reduce))]))
-
-    (define/public (pstate-conflicts st)
-      (match-define (pstate index _ _ shift _ _ _ lookahead) st)
-      (filter values
-              (for/list ([(t reds) (in-hash (or lookahead (hash)))])
-                (define shift-st (hash-ref shift t #f))
-                (and (> (+ (length reds) (if shift-st 1 0)) 1)
-                     (conflict index t shift-st reds)))))
+      (define (check-rr reds [t #f])
+        (if (> (length reds) 1) (list (conflict:r/r index t)) null))
+      (append
+       ;; shift/reduce
+       (for/list ([t (in-hash-keys shift)]
+                  #:when #t
+                  [red (in-list
+                        (if (and use-lookahead? (pstate-lookahead st))
+                            (hash-ref (pstate-lookahead st) t null)
+                            (pstate-reduce st)))]
+                  [red-i (in-naturals)])
+         (conflict:s/r index t))
+       ;; reduce/reduce
+       (cond [(and use-lookahead? (pstate-lookahead st))
+              (append*
+               (for/list ([(t reds) (in-hash (pstate-lookahead st))])
+                 (check-rr reds t)))]
+             [else (check-rr (pstate-reduce st))])))
 
     (define/public (slr1-lookahead reduce) ;; -> Hash[Elem => (Listof Reduction)]
       (for/fold ([h (hash)]) ([red (in-list reduce)])
@@ -257,38 +261,43 @@
         (for/fold ([h h]) ([t (in-list follows)])
           (hash-cons h t red))))
 
-    (define/public (lalr1-lookahead follow st reduce)
-      (for/fold ([h (hash)]) ([red (in-list reduce)])
-        (define red-la
-          (apply set-union null
-                 (for/list ([origin-st (in-list (state-reduce-origin st red))])
-                   (follow origin-st (reduction-nt red)))))
-        (for/fold ([h h]) ([elem (in-set red-la)])
-          (hash-cons h elem red))))
+    (define/public (make-lalr1-lookahead)
+      (let* ([g* (reify-lr0)] [gg* (new grammar-base% (g g*))])
+        (define (follow st nt) (send gg* nt-follow (cons (state-index st) nt)))
+        (lambda (st reduce)
+          (for/fold ([h (hash)]) ([red (in-list reduce)])
+            (define red-la
+              (apply set-union null
+                     (for/list ([origin-st (in-list (state-reduce-origin st red))])
+                       (follow origin-st (reduction-nt red)))))
+            (for/fold ([h h]) ([elem (in-set red-la)])
+              (hash-cons h elem red))))))
 
     (define pstates (make-pstates))
     (define/public (get-pstates) pstates)
-    (define/public (get-lr0-conflicts)
-      (append* (for/list ([st (in-vector pstates)]) (pstate-lr0-conflicts st))))
-    (define/public (get-conflicts)
-      (append* (for/list ([st (in-vector pstates)]) (pstate-conflicts st))))
+    (define/public (get-lr0-conflicts) (get-conflicts #f))
+    (define/public (get-conflicts [use-lookahead? #t])
+      (append* (for/list ([st (in-vector pstates)]) (pstate-conflicts st use-lookahead?))))
 
     ;; ========================================
 
     (define/override (print)
       (super print)
       (when #t
-        (printf "LR0 States:\n")
+        (printf "States:\n")
         ;; (pretty-print state-goto-h)
         (pretty-print pstates))
-      (let ([lr0-conflicts (get-lr0-conflicts)])
-        (when (pair? lr0-conflicts)
-          (printf "LR0 Conflicts:\n")
-          (pretty-print lr0-conflicts)))
-      (let ([conflicts (get-conflicts)])
-        (when (pair? conflicts)
-          (printf "SLR Conflicts:\n")
-          (pretty-print conflicts))))
+      (when #t
+        (let ([lr0-conflicts (get-lr0-conflicts)])
+          (when #t ;; (pair? lr0-conflicts)
+            (printf "LR(0) Conflicts: ~v\n" lr0-conflicts))))
+      (when #t
+        (let ([conflicts (get-conflicts)])
+          (when #t ;; (pair? conflicts)
+            (printf "~a Conflicts: ~v\n"
+                    (case lookahead-mode
+                      [(lr0) "LR(0)"] [(slr1) "SLR(1)"] [(lalr1) "LALR(1)"] [else "??"])
+                    conflicts)))))
 
     (define/public (print-states [edges? #t])
       (for ([st pstates]) (print-state st edges?)))
