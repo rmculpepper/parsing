@@ -31,9 +31,9 @@
   (define (get-token-args args stack)
     (for/list ([arg (in-list args)])
       (match arg
-        [(list datum) datum]
+        ;;[(list datum) datum] ;; convert to token?
         [(? exact-nonnegative-integer? index)
-         (tok-v (list-ref stack (+ index index -1)))])))
+         (list-ref stack (+ index index 1))])))
 
   (define (loop stack)
     (define st (car stack))

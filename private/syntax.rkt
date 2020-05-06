@@ -100,7 +100,7 @@
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tk to list to check at runtime?
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
-                            (telem ($ t.ast) (list ($ tk.ast)))))
+                            (telem ($ t.ast) ($ tk.ast))))
     (pattern (~seq t:token-name #:read (tf:symbol arg:expr ...))
              #:with args:user-expr #'(list arg ...)
              #:attr mkast (lambda (nt? venv)
@@ -156,14 +156,14 @@
         ((make-variable-like-transformer #`(get-token-value '#,vvar #,tvar)) stx))))
 
   (define (expand/make-user-expr expr venv)
-    (syntax-parse (local-expand (wrap-expr #'e venv) 'expression null)
+    (syntax-parse (local-expand (wrap-expr expr venv) 'expression null)
       #:literal-sets (kernel-literals)
       [(#%plain-lambda (tvar ...) body ...)
        (define tvars (syntax->list #'(tvar ...)))
        (define used-tvar-h
          (for/fold ([h (hasheq)])
                    ([var (in-list (free-vars #'(begin body ...)))])
-           (cond [(memf var tvars free-identifier=?)
+           (cond [(member var tvars free-identifier=?)
                   => (lambda (vs) (hash-set h (car vs) #t))]
                  [else h])))
        (values

@@ -83,11 +83,13 @@
 
 ;; ----------------------------------------
 
+;; #:pure is not really implemented yet
+#|
 (eprintf "\nExample d4:\n")
 (define-grammar d4
   #:start S
-  [S [([m byte] [#t #:apply (zero? m)]) #:> 'none]
-     [([n byte] [#f #:apply (zero? n)] [v byte]) #:> v]])
+  [S [([m byte] [#t #:pure (zero? m)]) #:> 'none]
+     [([n byte] [#f #:pure (zero? n)] [v byte]) #:> v]])
 (define dg4 (lr-parser #:grammar d4))
 (when PRINT? (send dg4 print))
 
@@ -101,3 +103,4 @@
 (define sd4b (bytes 0))
 (send dg4 parse (d4-tokenizer sd4a))
 (send dg4 parse (d4-tokenizer sd4b))
+|#
