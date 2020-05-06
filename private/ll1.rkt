@@ -53,11 +53,14 @@
 
 (define (ll1-parse start table vals tz)
   (define (get-token peek? tr stack)
-    (cond [(symbol? (car tr))
-           (tz peek? (car tr) (get-token-args (cdr tr) stack))]
-          [(eq? (car tr) '#:apply)
-           (apply->token (get-val (caddr tr)) (get-token-args (cdddr tr) stack))]
+    (cond [(symbol? tr)
+           (tz peek? tr null)]
+          [(pair? tr)
+           (tz peek? (car tr) (eval-user-expr (cdr tr) stack))]
           [else (error 'll1-parse "bad tr: ~e" tr)]))
+  (define (eval-user-expr ue stack)
+    (apply (get-val (expr:user-fun ue))
+           (get-token-args (expr:user-args ue) stack)))
   (define (get-token-args args stack)
     (for/list ([arg (in-list args)])
       (match arg

@@ -17,8 +17,8 @@
 
 ;; In addition, the following abbreviated Elements are allowed:
 ;; - NT                         -- short for [_ NT]
-;; - T                          -- short for [_ T #:read (default)]
-;; - [name T]                   -- short for [name T #:read (default)]
+;; - T                          -- short for [_ T #:read default]
+;; - [name T]                   -- short for [name T #:read default]
 ;; - [name T #:read TR]         -- short for [name T #:read (TR)]
 ;; - [T #:read (TR Expr ...)]   -- short for [_ T #:read (TR Expr ...)]
 ;; - [T #:pure Expr]            -- short for [_ name T #:pure Expr]
@@ -89,10 +89,10 @@
              #:attr name #f
              #:attr mkast (lambda (nt? venv)
                             (cond [(nt? ($ s.ast)) (ntelem ($ s.ast))]
-                                  [else (telem ($ s.ast) '(default))])))
+                                  [else (telem ($ s.ast) 'default)])))
     (pattern t:non-symbol-token-name
              #:attr name #f
-             #:attr mkast (lambda (nt? venv) (telem ($ t.ast) '(default)))))
+             #:attr mkast (lambda (nt? venv) (telem ($ t.ast) 'default))))
 
   (define-splicing-syntax-class elem-content #:attributes (mkast)
     #:description "element content"

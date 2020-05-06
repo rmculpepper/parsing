@@ -2,9 +2,9 @@
 (require racket/match
          racket/list)
 (provide (all-defined-out)
-         (all-from-out (submod "." terminals-and-nonterminals)))
+         (all-from-out (submod "." common)))
 
-(module terminals-and-nonterminals racket/base
+(module common racket/base
   (provide (all-defined-out))
 
   ;; Note that the representations of Nonterminals and Terminals
@@ -23,9 +23,22 @@
   ;; In particular, a Terminal is quotable and comparable with eqv?.
   (define (ok-terminal? v)
     (or (symbol? v) (char? v) (boolean? v) (exact-integer? v)))
-  (define EOF (string->unreadable-symbol "EOF")))
+  (define EOF (string->unreadable-symbol "EOF"))
 
-(require 'terminals-and-nonterminals)
+  ;; A user expression may refer to parameters and previous results. It is
+  ;; translated to a function that takes then as arguments, along with indicators
+  ;; of the arguments to supply.
+
+  ;; UserExpr[X] is (expr:user UserFun[X] (Listof LocalExpr))
+  ;; UserFun[X] = Nat -- index in value table to Syntax[Expr[(Listof ??) -> X]]
+  ;; LocalExpr = Nat            -- reference to nth Value on stack
+  ;;           | (list Datum)   -- constant
+
+  ;; At run time, a grammar has an associated values vector, mapping UserFun
+  ;; indexes etc to values.
+  (struct expr:user (fun args) #:prefab))
+
+(require 'common)
 
 ;; ----------------------------------------
 
@@ -59,19 +72,6 @@
 ;; conclude that the two productions are mutually exclusive. But the equivalence
 ;; of Racket expressions is undecidable, so we must approximate.
 
-;; A user expression may refer to parameters and previous results. It is
-;; translated to a function that takes then as arguments, along with indicators
-;; of the arguments to supply.
-
-;; UserExpr[X] is (expr:user UserFun[X] (Listof LocalExpr))
-;; UserFun[X] = Nat -- index in value table to Syntax[Expr[(Listof ??) -> X]]
-;; LocalExpr = Nat            -- reference to nth Value on stack
-;;           | (list Datum)   -- constant
-(struct expr:user (fun args) #:prefab)
-
-;; At run time, a grammar has an associated values vector, mapping UserFun
-;; indexes etc to values.
-
 ;; ValuesDesc = (Vectorof Syntax[Expr])   -- at compile time
 ;; ValuesDesc = (Vectorof Value)          -- at run time
 
@@ -82,6 +82,7 @@
 ;; - #f                         -- polymorphic (compatible with any reader)
 ;; - Symbol                     -- reader with no arguments
 ;; - (cons Symbol UserExpr)     -- reader with arguments
+(define default-tr 'default)
 
 ;; In general, in order to do a read, all items in a state (and across
 ;; all threads, for a GLR parser) must agree on what TokenReader to
@@ -98,7 +99,7 @@
 (define (telems-consistent-tr who elems [fail #f])
   (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
   (match (group-by telem-tr proper-elems)
-    [(list) '(default)]
+    [(list) default-tr]
     [(list group)
      (telem-tr (car group))]
     [groups

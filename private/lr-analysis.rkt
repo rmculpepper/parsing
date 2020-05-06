@@ -65,11 +65,11 @@
 (define (elem->label elem)
   (match elem
     [(ntelem nt) nt]
-    [(telem t '(default)) t]
+    [(telem t 'default) t]
     [(telem t #f) t]
-    [(telem t (list tr)) (list t tr)]
-    [(telem t (list* '#:apply sym index args)) (list* t '#:apply sym args)]
-    [(telem t tr) (list t tr)]))
+    [(telem t (? symbol? tr)) (list t tr)]
+    [(telem t tr) (list t tr)]
+    [(pure-elem t ue) (list* t '#:pure ue)]))
 (define (insert-dot k xs)
   (cond [(zero? k) (cons DOT xs)]
         [else (cons (car xs) (insert-dot (sub1 k) (cdr xs)))]))

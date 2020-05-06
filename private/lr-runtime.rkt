@@ -20,11 +20,14 @@
   (define (get-val n) (vector-ref vals n))
 
   (define (get-token peek? tr stack)
-    (cond [(symbol? (car tr))
-           (tz peek? (car tr) (get-token-args (cdr tr) stack))]
-          [(eq? (car tr) '#:apply)
-           (apply->token (get-val (caddr tr)) (get-token-args (cdddr tr) stack))]
+    (cond [(symbol? tr)
+           (tz peek? tr null)]
+          [(pair? tr)
+           (tz peek? (car tr) (eval-user-expr (cdr tr) stack))]
           [else (error 'lr-parse "bad tr: ~e" tr)]))
+  (define (eval-user-expr ue stack)
+    (apply (get-val (expr:user-fun ue))
+           (get-token-args (expr:user-args ue) stack)))
   (define (get-token-args args stack)
     (for/list ([arg (in-list args)])
       (match arg
@@ -98,6 +101,3 @@
 (define (apply->token f args)
   (define v (apply f args))
   (list (if (ok-terminal? v) v 'bad-token-name)))
-
-(define (ok-terminal? v)
-  (or (symbol? v) (char? v) (boolean? v) (exact-integer? v)))

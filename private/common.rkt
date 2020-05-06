@@ -1,7 +1,8 @@
 #lang racket/base
 (require racket/match
-         (submod "grammar-rep.rkt" terminals-and-nonterminals))
-(provide (all-defined-out) EOF)
+         (submod "grammar-rep.rkt" common))
+(provide (all-defined-out)
+         (all-from-out (submod "grammar-rep.rkt" common)))
 
 ;; ============================================================
 

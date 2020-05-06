@@ -57,7 +57,7 @@
 ;; FIXME: in GLR, if token arguments, *values* must be consistent, not just exprs
 ;; For now, just disallow parameters.
 (define (stacks-consistent-tr sks)
-  (define (safe-tr? x) (match x [(list (? symbol?)) #t] [_ #f]))
+  (define (safe-tr? x) (match x [(? symbol?) #t] [_ #f]))
   (match sks
     #;[(list sk) (pstate-tr (car sk))] ;; unsound: if params, rest of stack may be tjoin
     [sks
@@ -67,7 +67,8 @@
              [(safe-tr? tr)
               (cond [(or (eq? seen-tr #f) (equal? seen-tr tr)) tr]
                     [else (error 'glr-parse "ambiguous token reader\n  candidates: ~e"
-                                 (remove-duplicates (map pstate-tr (map car sks))))])]))]))
+                                 (remove-duplicates (map pstate-tr (map car sks))))])]
+             [else (error 'glr-parse "unsupported token reader\n  reader: ~e" tr)]))]))
 
 ;; ============================================================
 
@@ -101,7 +102,7 @@
     ;; FIXME: for now, just support no-argument token-readers
     ;; FIXME: no need to treat '#:apply as actual token read! no need to sync!
     (match tr
-      [(cons (? symbol? tk) '()) (tz #f tk null)]
+      [(? symbol? tk) (tz #f tk null)]
       [_ (error 'glr-parse "unsupported token reader: ~e" tr)]))
 
   (define failed null) ;; mutated; (Listof VStack)
