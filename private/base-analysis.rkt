@@ -25,7 +25,8 @@
        (for/list ([elem (in-vector (prod-item (list-ref rhss (random (length rhss)))))])
          (match elem
            [(ntelem nt) (generate nt)]
-           [(telem t _) (list (list t))]))))
+           [(telem t _) (list (list t))]
+           [(pure-elem _ _) (list null)]))))
 
     ;; ----------------------------------------
 
@@ -51,7 +52,10 @@
     (define/public (nt-nullable? sym #:h [h nt-nullable-h])
       (hash-ref h sym #t))
     (define/public (elem-nullable? elem #:h [h nt-nullable-h])
-      (match elem [(ntelem nt) (nt-nullable? nt #:h h)] [_ #f]))
+      (match elem
+        [(ntelem nt) (nt-nullable? nt #:h h)]
+        [(telem t tr) #f]
+        [(pure-elem _ _) #t]))
     (define/public (item-nullable? item #:h [h nt-nullable-h])
       (for/and ([elem (in-vector item)]) (elem-nullable? elem #:h h)))
 
@@ -72,7 +76,10 @@
     (define/public (nt-minlen nt #:h [h nt-minlen-h])
       (hash-ref h nt 0))
     (define/public (elem-minlen elem #:h [h nt-minlen-h])
-      (match elem [(ntelem nt) (nt-minlen nt #:h h)] [_ 1]))
+      (match elem
+        [(ntelem nt) (nt-minlen nt #:h h)]
+        [(telem t tr) 1]
+        [(pure-elem _ _) 0]))
     (define/public (item-minlen item #:h [h nt-minlen-h])
       (for/sum ([elem (in-vector item)]) (elem-minlen elem #:h h)))
 
@@ -92,7 +99,10 @@
     (define/public (nt-first nt #:h [h nt-first-h])
       (hash-ref h nt null))
     (define/public (elem-first elem #:h [h nt-first-h])
-      (match elem [(ntelem nt) (nt-first nt #:h h)] [t (list t)]))
+      (match elem
+        [(ntelem nt) (nt-first nt #:h h)]
+        [(? telem? t) (list t)]
+        [(pure-elem _ _) null]))
     (define/public (item-first item #:h [h nt-first-h])
       (let loop ([i 0])
         (cond [(< i (vector-length item))
@@ -117,7 +127,10 @@
     (define/public (nt-final nt #:h [h nt-final-h])
       (hash-ref h nt null))
     (define/public (elem-final elem #:h [h nt-final-h])
-      (match elem [(ntelem nt) (nt-final nt #:h h)] [t (list t)]))
+      (match elem
+        [(ntelem nt) (nt-final nt #:h h)]
+        [(? telem? t) (list t)]
+        [(pure-elem _ _) null]))
     (define/public (item-final item #:h [h nt-final-h])
       (let loop ([i (sub1 (vector-length item))])
         (cond [(>= i 0)
@@ -140,7 +153,8 @@
                 (values (hash-set h nt (set-union (hash-ref h nt null) follows-this))
                         (set-union (nt-first nt)
                                    (if (nt-nullable? nt) follows-this null)))]
-               [_ (values h (list elem))]))))
+               [(telem _ _) (values h (list elem))]
+               [(pure-elem _ _) (values h follows-this)]))))
        (hash start (list (telem EOF #f)))))
 
     ;; *-follow : ... -> (Listof telem)

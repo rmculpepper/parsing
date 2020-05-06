@@ -42,6 +42,10 @@
 (define (make-ll1-parser table vals g)
   (new ll1-parser% (table table) (vals vals) (g g)))
 
+;; Note: #:pure expressions don't really make sense for LL1 parsers. They're
+;; currently allowed, but they don't influence first/follow, so they don't
+;; influence parsing except to cause errors.
+
 ;; ============================================================
 
 (require racket/match
@@ -84,6 +88,11 @@
       [(telem t tr)
        (define next-tok (get-token #f tr lstack))
        (if (equal? t (tok-t next-tok))
+           (cons next-tok lstack)
+           (error 'll1-parse "expected ~v, next = ~v" t next-tok))]
+      [(pure-elem t ue)
+       (define next-tok (eval-user-expr ue lstack))
+       (if (eqv? t (tok-t next-tok))
            (cons next-tok lstack)
            (error 'll1-parse "expected ~v, next = ~v" t next-tok))]))
 
