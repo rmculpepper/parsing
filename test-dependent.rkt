@@ -81,26 +81,54 @@
 ;; ?? Maybe allow configurable default TokenReaders,
 ;; eg #:token-kind ([(#\space) char]) or #:token-kind ([char char])
 
+;; ----
+
+(eprintf "\nExample d3 (LL):\n")
+;; Modified to be LL(1) friendly
+(define-grammar d3*
+  #:start Settings
+  [Settings [([s Setting] [ss MoreSettings]) #:> (cons s ss)]]
+  [MoreSettings [([#\; #:read char] [ss Settings]) #:> ss]
+                [() #:> null]]
+  [Setting [([c letter #:read char] [#\= #:read char] [w word]) #:> (list c w)]])
+(define l3 (ll1-parser #:grammar d3*))
+(when PRINT? (send l3 print))
+
+(send l3 parse (d3-tokenizer sd3a))
+
+;; ----------------------------------------
+
+(eprintf "\nExample d4:\n")
+(define-grammar d4
+  #:start S
+  [S [([c letter #:read char] [w code #:pure (tok 'code (char->integer c))])
+      #:> (list c w)]])
+(define l4 (ll1-parser #:grammar d4))
+(when PRINT? (send l4 print))
+
+(send l4 parse (d3-tokenizer "A"))
+
+
 ;; ----------------------------------------
 
 ;; #:pure is not really implemented yet
 #|
-(eprintf "\nExample d4:\n")
-(define-grammar d4
+(eprintf "\nExample d5:\n")
+(define-grammar d5
   #:start S
   [S [([m byte] [#t #:pure (zero? m)]) #:> 'none]
      [([n byte] [#f #:pure (zero? n)] [v byte]) #:> v]])
-(define dg4 (lr-parser #:grammar d4))
-(when PRINT? (send dg4 print))
+(define dg5 (lr-parser #:grammar d5))
+(when PRINT? (send dg5 print))
 
-(define (d4-tokenizer bstr)
+(define (d5-tokenizer bstr)
   (define in (open-input-bytes bstr))
   (peeking-tokenizer
    (lambda (peek? kind args)
      (get-byte-token in))))
 
-(define sd4a (bytes 1 42))
-(define sd4b (bytes 0))
-(send dg4 parse (d4-tokenizer sd4a))
-(send dg4 parse (d4-tokenizer sd4b))
+(define sd5a (bytes 1 42))
+(define sd5b (bytes 0))
+(send dg5 parse (d5-tokenizer sd5a))
+(send dg5 parse (d5-tokenizer sd5b))
 |#
