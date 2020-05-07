@@ -22,7 +22,7 @@
   ;; - exact-integer
   ;; In particular, a Terminal is quotable and comparable with eqv?.
   (define (ok-terminal? v)
-    (or (symbol? v) (char? v) (boolean? v) (exact-integer? v)))
+    (or (symbol? v) (char? v) (exact-integer? v)))
   (define EOF (string->unreadable-symbol "EOF"))
 
   ;; A user expression may refer to parameters and previous results. It is
