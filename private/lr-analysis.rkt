@@ -166,7 +166,93 @@
 
     ;; ========================================
 
-    (define/public (reify-lr0)
+    (define/private (make-pstates)
+      (define get-lookahead (make-get-lookahead))
+      (define pstates (make-vector (state-count)))
+      (for ([(st index) (in-hash state-index-h)])
+        (vector-set! pstates index (state->pstate st index get-lookahead)))
+      pstates)
+
+    (define/private (state->pstate st index get-lookahead)
+      (define label (lr-state-label st))
+      (define shift (for/hash ([(elem st) (in-hash (state-edges st))]
+                               #:when (p/t-elem? elem))
+                      (values (p/t-elem-t elem) (state-index st))))
+      (define goto (for/hash ([(elem st) (in-hash (state-edges st))]
+                              #:when (ntelem? elem))
+                     (values (ntelem-nt elem) (state-index st))))
+      ;; FIXME: intern shift, goto?
+      (define reduce
+        (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))
+          (match-define (cons _ (prod nt index item action)) lrp)
+          (reduction nt index (vector-length item) action)))
+      (define accept
+        (cond [(equal? (map reduction-nt reduce) (list start)) 'true]
+              [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
+              [else #f]))
+      ;; Must check that shift TRs is consistent, also consistent with lookahead
+      ;; TRs (if used). NOTE: Cannot use TR w/ args in lookahead! Args depends
+      ;; on post-reduction stack indexes AND might refer to value from
+      ;; reduction(s).
+      (define (consistent-tr elems) (elems-consistent-tr 'lr-parser elems))
+      (define-values (tr lookahead/e)
+        (cond [(null? reduce)
+               ;; No reductions => no lookahead needed
+               (define tr (consistent-tr (filter p/t-elem? (hash-keys (state-edges st)))))
+               (values tr #f)]
+              [(and (hash-empty? shift) (<= (length reduce) 1))
+               ;; No shift, at most one reduction => no lookahead needed
+               (values #f #f)]
+              [else
+               ;; Non-empty shift AND at least one reduction, OR multiple reductions.
+               (define lookahead/e (get-lookahead st reduce))
+               (define tr
+                 (consistent-tr
+                  (append (filter p/t-elem? (hash-keys (state-edges st)))
+                          (hash-keys lookahead/e))))
+               (unless (simple-tr? tr)
+                 (error 'lr-parser
+                        "~a\n  state: ~.s\n  reader: ~.s"
+                        "cannot use token reader with arguments for lookahead"
+                        label (car tr)))
+               (values tr lookahead/e)]))
+      (define lookahead
+        (and lookahead/e
+             (not (eq? lookahead-mode 'lr0))
+             (for/hash ([(elem red) (in-hash lookahead/e)])
+               (values (p/t-elem-t elem) red))))
+      (pstate index label tr shift reduce goto accept lookahead))
+
+    ;; ----------------------------------------
+
+    ;; make-get-lookahead : -> State (Listof Reduction) -> Hash[Elem => (Listof Reduction)]
+    (define/private (make-get-lookahead)
+      (case lookahead-mode
+        ;; We need the lookahead for static analysis reasons, so we compute
+        ;; SLR(1) lookahead for 'lr0 too.
+        [(lr0 slr1) (make-slr1-lookahead)]
+        [(lalr1) (make-lalr1-lookahead)]))
+
+    (define/private ((make-slr1-lookahead) _st reduce)
+      (for/fold ([h (hash)]) ([red (in-list reduce)])
+        (match-define (reduction red-nt _ _ _) red)
+        (define follows (nt-follow red-nt))
+        (for/fold ([h h]) ([t (in-list follows)])
+          (hash-cons h t red))))
+
+    (define/private (make-lalr1-lookahead)
+      (let* ([g* (reify-lr0)] [gg* (new grammar-base% (g g*))])
+        (define (follow st nt) (send gg* nt-follow (cons (state-index st) nt)))
+        (lambda (st reduce)
+          (for/fold ([h (hash)]) ([red (in-list reduce)])
+            (define red-la
+              (apply set-union null
+                     (for/list ([origin-st (in-list (state-reduce-origin st red))])
+                       (follow origin-st (reduction-nt red)))))
+            (for/fold ([h h]) ([elem (in-set red-la)])
+              (hash-cons h elem red))))))
+
+    (define/private (reify-lr0)
       ;; Reifies the LR0 state graph as a grammar.
       (define nnt-intern-h (make-hash))
       (define (mknnt st nt) (cons (state-index st) nt))
@@ -188,53 +274,9 @@
                (for/list ([(nnt prods) (in-hash ndef-h)]) (def nnt (reverse prods)))
                (get-vals)))
 
-    ;; ========================================
+    ;; ----------------------------------------
 
-    (define/public (make-pstates)
-      (define make-lookahead
-        (case lookahead-mode
-          [(lr0) (lambda (st reduce) #f)]
-          [(slr1) (lambda (st reduce) (slr1-lookahead reduce))]
-          [(lalr1) (make-lalr1-lookahead)]))
-      (define (state->pstate st index)
-        (define label (lr-state-label st))
-        (define shift (for/hash ([(elem st) (in-hash (state-edges st))]
-                                 #:when (p/t-elem? elem))
-                        (values (p/t-elem-t elem) (state-index st))))
-        (define goto (for/hash ([(elem st) (in-hash (state-edges st))]
-                                #:when (ntelem? elem))
-                       (values (ntelem-nt elem) (state-index st))))
-        ;; FIXME: intern shift, goto?
-        (define reduce
-          (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))
-            (match-define (cons _ (prod nt index item action)) lrp)
-            (reduction nt index (vector-length item) action)))
-        (define accept
-          (cond [(equal? (map reduction-nt reduce) (list start)) 'true]
-                [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
-                [else #f]))
-        (define lookahead/e (make-lookahead st reduce))
-        (define treader
-          (elems-consistent-tr
-           'lr-parser
-           (append (filter p/t-elem? (hash-keys (state-edges st)))
-                   (if lookahead/e (hash-keys lookahead/e) null))))
-        (define lookahead
-          (cond [(or (null? reduce) (not lookahead/e)) #f]
-                [(and (hash-empty? shift) (<= (length reduce) 1))
-                 ;; I think this case can cause a parser to do more reductions
-                 ;; before discovering that the next token is bad.
-                 #f]
-                [else (for/hash ([(elem red) (in-hash lookahead/e)])
-                        (values (p/t-elem-t elem) red))]))
-        (pstate index label treader shift reduce goto accept lookahead))
-      (define pstates (make-vector (state-count)))
-      (for ([(st index) (in-hash state-index-h)])
-        (vector-set! pstates index (state->pstate st index)))
-      ;; FIXME: if lookaheads, should be consistent with goto successors (??)
-      pstates)
-
-    (define/public (pstate-conflicts st use-lookahead?)
+    (define/private (pstate-conflicts st use-lookahead?)
       (match-define (pstate index _ _ shift reduce _ _ _) st)
       (define (check-rr reds [t #f])
         (if (> (length reds) 1) (list (conflict:r/r index t)) null))
@@ -255,24 +297,7 @@
                  (check-rr reds t)))]
              [else (check-rr (pstate-reduce st))])))
 
-    (define/public (slr1-lookahead reduce) ;; -> Hash[Elem => (Listof Reduction)]
-      (for/fold ([h (hash)]) ([red (in-list reduce)])
-        (match-define (reduction red-nt _ _ _) red)
-        (define follows (nt-follow red-nt))
-        (for/fold ([h h]) ([t (in-list follows)])
-          (hash-cons h t red))))
-
-    (define/public (make-lalr1-lookahead)
-      (let* ([g* (reify-lr0)] [gg* (new grammar-base% (g g*))])
-        (define (follow st nt) (send gg* nt-follow (cons (state-index st) nt)))
-        (lambda (st reduce)
-          (for/fold ([h (hash)]) ([red (in-list reduce)])
-            (define red-la
-              (apply set-union null
-                     (for/list ([origin-st (in-list (state-reduce-origin st red))])
-                       (follow origin-st (reduction-nt red)))))
-            (for/fold ([h h]) ([elem (in-set red-la)])
-              (hash-cons h elem red))))))
+    ;; ========================================
 
     (define pstates (make-pstates))
     (define/public (get-pstates) pstates)

@@ -2,9 +2,10 @@
 (require "token.rkt")
 (provide (all-defined-out))
 
-;; PState = (pstate StIndex Label TReader Shifts Reduces Gotos Accept Lookahead)
+;; PState = (pstate StIndex Label TR Shifts Reduces Gotos Accept Lookahead)
 ;; StIndex = Nat
 ;; Label = Any
+;; TR = TokenReaderSpec or #f
 ;; Shifts = Hash[TerminalSymbol => Nat]
 ;; Reduces = (Listof Reduction)
 ;; Lookahead = #f | Hash[TerminalSymbol => Reduces]

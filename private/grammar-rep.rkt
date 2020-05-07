@@ -84,6 +84,10 @@
 ;; - (cons Symbol UserExpr)     -- reader with arguments
 (define default-tr 'default)
 
+;; simple-tr? : TokenReaderSpec -> Boolean
+;; A simple TR has no arguments.
+(define (simple-tr? v) (or (not v) (symbol? v)))
+
 ;; In general, in order to do a read, all items in a state (and across
 ;; all threads, for a GLR parser) must agree on what TokenReader to
 ;; use. It is useful to check agreement statically, especially for
