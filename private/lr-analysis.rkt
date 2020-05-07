@@ -33,8 +33,6 @@
 ;; An LR0-Item is (cons Nat ElemSequence), where the nat is
 ;; in [0, (vector-length item)], indicates the position of the dot.
 
-;; An LR0-Prod is (prod NT Nat LR0-Item Action)
-
 (define (prod->initial-lrprod p) (cons 0 p))
 (define (lrprod-prod lrp) (cdr lrp))
 
