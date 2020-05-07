@@ -29,13 +29,6 @@
 
 ;; ============================================================
 
-;; A TokenReader is one of
-;; - #f
-;; - (cons Symbol (Listof Any))
-
-
-;; ============================================================
-
 ;; A Tokenizer is (Boolean Symbol (Listof Arg) -> Token).
 ;; The tokenizer should be aware of peek vs read, so that for example
 ;; on input ports it can implement token-peeking by port-peeking.
