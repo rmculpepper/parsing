@@ -1,4 +1,5 @@
 #lang racket/base
+(require "token.rkt")
 (provide (all-defined-out))
 
 ;; PState = (pstate StIndex Label TReader Shifts Reduces Gotos Accept Lookahead)
@@ -69,3 +70,13 @@
 ;; - (conflict:s/r Nat Terminal/#f)
 (struct conflict:s/r (st t) #:prefab)
 (struct conflict:r/r (st t) #:prefab)
+
+;; ============================================================
+
+;; make-nt-token : NT Any (Listof Token) -> Token
+(define (make-nt-token nt value args)
+  (token nt value
+         ;; start = *first* token-start from args
+         (ormap token-start args)
+         ;; end = *last* token-end from args
+         (for/fold ([end #f]) ([arg (in-list args)]) (or (token-end arg) end))))

@@ -42,12 +42,12 @@
            => (lambda (accept)
                 ;; Did we get here by a shift or a goto?
                 (case accept
-                  [(true) (tok-v (cadr (cddr stack)))]
-                  [(virtual) (tok-v (cadr stack))]))]
+                  [(true) (cadr (cddr stack))]
+                  [(virtual) (cadr stack)]))]
           [(pstate-lookahead st)
            => (lambda (lookahead)
                 (define next-tok (get-token #t (pstate-tr st) stack))
-                (cond [(hash-ref lookahead (tok-t next-tok) #f)
+                (cond [(hash-ref lookahead (token-name next-tok) #f)
                        => (lambda (reds) (reduce stack (car reds)))]
                       [else (shift stack)]))]
           ;; ??? reduce vs shift priority?
@@ -58,8 +58,8 @@
   (define (reduce stack red)
     (match-define (reduction nt index arity action) red)
     (define-values (args stack*) (pop-values arity stack))
-    (define value (tok nt (apply (get-val action) args)))
-    (cond [(filter:reject? (tok-v value))
+    (define value (make-nt-token nt (apply (get-val action) args) args))
+    (cond [(filter:reject? (token-value* value))
            (fail 'reduce stack value)]
           [else
            (dprintf "REDUCE: ~v\n" nt value)
@@ -68,12 +68,12 @@
   (define (shift stack)
     (define st (car stack))
     (define next-tok (get-token #f (pstate-tr st) stack))
-    (cond [(hash-ref (pstate-shift st) (tok-t next-tok) #f)
+    (cond [(hash-ref (pstate-shift st) (token-name next-tok) #f)
            => (lambda (next-state)
                 (dprintf "SHIFT ~v, #~s\n" next-tok next-state)
                 (loop (list* (get-state next-state) next-tok stack)))]
           ;; Accept pre-parsed non-terminals from the lexer too.
-          [(hash-ref (pstate-goto st) (tok-t next-tok) #f)
+          [(hash-ref (pstate-goto st) (token-name next-tok) #f)
            => (lambda (next-state)
                 (loop (list* (get-state next-state) next-tok stack)))]
           [else (fail 'shift stack next-tok)]))
@@ -81,7 +81,7 @@
   (define (goto reduced stack)
     (define st (car stack))
     (dprintf "RETURN VIA #~s\n" (pstate-index st))
-    (define next-state (hash-ref (pstate-goto st) (tok-t reduced)))
+    (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
     (dprintf "GOTO ~v\n" next-state)
     (loop (list* (get-state next-state) reduced stack)))
 

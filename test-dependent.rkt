@@ -2,7 +2,8 @@
 (require racket/class
          racket/match
          racket/pretty
-         "main.rkt")
+         "main.rkt"
+         (submod "test.rkt" util))
 (provide (all-defined-out)
          (all-from-out "main.rkt"))
 
@@ -25,12 +26,13 @@
 (define sd1a '((msg1) (int4 4)))
 (define sd1b '((msg2)))
 
-(define (d1-tokenizer toks)
+(define (d1-tokenizer vs)
+  (define toks (make-toks vs))
   (peeking-tokenizer
    (lambda (peek? kind args)
      (case kind
-       [(read-data) (tok 'data (car args))]
-       [else (if (pair? toks) (begin0 (apply tok (car toks)) (set! toks (cdr toks))) EOF-tok)]))))
+       [(read-data) (token 'data (car args))]
+       [else (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) EOF-tok)]))))
 
 (send dg1 parse (d1-tokenizer sd1a))
 (send dg1 parse (d1-tokenizer sd1b))
@@ -101,7 +103,7 @@
 (eprintf "\nExample d4:\n")
 (define-grammar d4
   #:start S
-  [S [([c letter #:read char] [w code #:pure (tok 'code (char->integer c))])
+  [S [([c letter #:read char] [w code #:pure (token 'code (char->integer c))])
       #:> (list c w)]])
 (define l4 (ll1-parser #:grammar d4))
 (when PRINT? (send l4 print))

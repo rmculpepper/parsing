@@ -195,10 +195,10 @@
   (void))
 
 (define (mk-action proc)
-  (lambda toks (apply proc (map tok-v (filter tok-has-v? toks)))))
+  (lambda toks (apply proc (map token-value* (filter token-with-value? toks)))))
 
 (define (mk-auto-action nt index)
-  (lambda toks (list* nt index (map tok-v (filter tok-has-v? toks)))))
+  (lambda toks (list* nt index (map token-value* (filter token-with-value? toks)))))
 
 (define-syntax Grammar
   (syntax-parser

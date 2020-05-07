@@ -1,18 +1,27 @@
 #lang racket/base
 (require racket/class
+         racket/match
          "main.rkt")
 (provide (all-defined-out)
          (all-from-out "main.rkt"))
 
 (define PRINT? #f)
 
-(define tok* (case-lambda [(t) (tok t t)] [(t v) (tok t v)]))
-(define (apply-tok* v) (apply tok* v))
+(module util racket/base
+  (require racket/match "main.rkt")
+  (provide (all-defined-out))
 
-(define (mktz toks)
-  (peeking-tokenizer
-   (lambda (_p? _k _a)
-     (if (pair? toks) (begin0 (apply tok* (car toks)) (set! toks (cdr toks))) EOF-tok))))
+  (define (make-toks vs)
+    (for/list ([v (in-list vs)] [i (in-naturals)])
+      (match v [(list t) (token t t i i)] [(list t v) (token t v i i)])))
+
+  (define (mktz vs)
+    (define toks (make-toks vs))
+    (peeking-tokenizer
+     (lambda (_p? _k _a)
+       (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) EOF-tok)))))
+
+(require 'util)
 
 ;; ============================================================
 

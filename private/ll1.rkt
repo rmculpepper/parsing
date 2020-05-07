@@ -73,21 +73,21 @@
     (match (hash-ref table nt)
       [(cons tr dispatch)
        (define next-tok (get-token #t tr null))
-       (cond [(hash-ref dispatch (tok-t next-tok) #f)
+       (cond [(hash-ref dispatch (token-name next-tok) #f)
               => (lambda (ps) (loop-prod (car ps)))]
              [else (error 'll1-parse "NT = ~v, next = ~v" nt next-tok)])]))
 
   (define (loop-elem e lstack)
     (match e
       [(ntelem nt)
-       (cons (tok nt (loop-nt nt)) lstack)]
+       (cons (token nt (loop-nt nt)) lstack)]
       [(telem t tr)
        (loop-token t (get-token #f tr lstack) lstack)]
       [(pure-elem t ue)
        (loop-token t (eval-user-expr ue lstack) lstack)]))
 
   (define (loop-token t next-tok lstack)
-    (if (eqv? t (tok-t next-tok))
+    (if (eqv? t (token-name next-tok))
         (cons next-tok lstack)
         (error 'll1-parse "expected ~v, next = ~v" t next-tok)))
 
@@ -102,7 +102,7 @@
 
   (loop-nt start))
 
-;; FIXME: don't need to store (tok NT/T Value) on stack, just Value,
+;; FIXME: don't need to store (token NT/T Value) on stack, just Value,
 ;; *except* for detecting tokens without payloads in action routines.
 
 (define (apply->token f args)
