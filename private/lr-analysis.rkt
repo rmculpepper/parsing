@@ -221,10 +221,10 @@
                    (if lookahead/e (hash-keys lookahead/e) null))))
         (define lookahead
           (cond [(or (null? reduce) (not lookahead/e)) #f]
-                ;; [(and (hash-empty? shift) (<= (length reduce) 1))
-                ;;  ;; I think this case can cause a parser to do more reductions
-                ;;  ;; before discovering that the next token is bad.
-                ;;  #f]
+                [(and (hash-empty? shift) (<= (length reduce) 1))
+                 ;; I think this case can cause a parser to do more reductions
+                 ;; before discovering that the next token is bad.
+                 #f]
                 [else (for/hash ([(elem red) (in-hash lookahead/e)])
                         (values (p/t-elem-t elem) red))]))
         (pstate index label treader shift reduce goto accept lookahead))
