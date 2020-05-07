@@ -42,10 +42,6 @@
 (define (make-ll1-parser table vals g)
   (new ll1-parser% (table table) (vals vals) (g g)))
 
-;; Note: #:pure expressions don't really make sense for LL1 parsers. They're
-;; currently allowed, but they don't influence first/follow, so they don't
-;; influence parsing except to cause errors.
-
 ;; ============================================================
 
 (require racket/match
@@ -70,7 +66,7 @@
       (match arg
         [(list datum) datum]
         [(? exact-nonnegative-integer? index)
-         (tok-v (list-ref stack (sub1 index)))])))
+         (list-ref stack index)])))
   (define (get-val k) (vector-ref vals k))
 
   (define (loop-nt nt)
@@ -84,17 +80,16 @@
   (define (loop-elem e lstack)
     (match e
       [(ntelem nt)
-       (cons (cons nt (loop-nt nt)) lstack)]
+       (cons (tok nt (loop-nt nt)) lstack)]
       [(telem t tr)
-       (define next-tok (get-token #f tr lstack))
-       (if (equal? t (tok-t next-tok))
-           (cons next-tok lstack)
-           (error 'll1-parse "expected ~v, next = ~v" t next-tok))]
+       (loop-token t (get-token #f tr lstack) lstack)]
       [(pure-elem t ue)
-       (define next-tok (eval-user-expr ue lstack))
-       (if (eqv? t (tok-t next-tok))
-           (cons next-tok lstack)
-           (error 'll1-parse "expected ~v, next = ~v" t next-tok))]))
+       (loop-token t (eval-user-expr ue lstack) lstack)]))
+
+  (define (loop-token t next-tok lstack)
+    (if (eqv? t (tok-t next-tok))
+        (cons next-tok lstack)
+        (error 'll1-parse "expected ~v, next = ~v" t next-tok)))
 
   (define (loop-prod p)
     (match-define (prod nt index item action) p)
