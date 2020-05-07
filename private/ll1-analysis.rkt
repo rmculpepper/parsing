@@ -26,8 +26,8 @@
     (define/public (def->entry d)
       (match-define (def nt rhss) d)
       (define tr
-        (let ([telems (set-union (nt-first nt) (if (nt-nullable? nt) (nt-follow nt) null))])
-          (telems-consistent-tr 'll1-parser telems)))
+        (let ([elems (set-union (nt-first nt) (if (nt-nullable? nt) (nt-follow nt) null))])
+          (elems-consistent-tr 'll1-parser elems)))
       (cons tr
             (for/fold ([h (hash)]) ([p (in-list rhss)])
               (match-define (prod nt index item action) p)

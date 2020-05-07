@@ -96,15 +96,19 @@
 
 ;; An alternative to static checking is dynamic checking or a hybrid.
 
-(define (telems-consistent-tr who elems [fail #f])
-  (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
-  (match (group-by telem-tr proper-elems)
+(define (p/t-elem? v) (or (telem? v) (pure-elem? v)))
+(define (p/t-elem-t v) (match v [(telem t _) t] [(pure-elem t _) t]))
+(define (p/t-elem-tr v) (match v [(telem _ tr) tr] [(pure-elem _ e) (cons '#:pure e)]))
+
+(define (elems-consistent-tr who elems)
+  (define proper-elems (filter p/t-elem-tr elems)) ;; ignore polymorphic tokens like EOF
+  (match (group-by p/t-elem-tr proper-elems)
     [(list) default-tr]
     [(list group)
-     (telem-tr (car group))]
+     (p/t-elem-tr (car group))]
     [groups
-     (define kinds (map telem-tr (map car groups)))
-     (if fail (fail kinds) (error who "inconsistent token readers\n  readers: ~v" kinds))]))
+     (define kinds (map p/t-elem-tr (map car groups)))
+     (error who "inconsistent token readers\n  readers: ~v" kinds)]))
 
 
 ;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX

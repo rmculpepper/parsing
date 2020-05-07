@@ -198,9 +198,11 @@
           [(lalr1) (make-lalr1-lookahead)]))
       (define (state->pstate st index)
         (define label (lr-state-label st))
-        (define shift (for/hash ([(elem st) (in-hash (state-edges st))] #:when (telem? elem))
-                        (values (telem-t elem) (state-index st))))
-        (define goto (for/hash ([(elem st) (in-hash (state-edges st))] #:when (ntelem? elem))
+        (define shift (for/hash ([(elem st) (in-hash (state-edges st))]
+                                 #:when (p/t-elem? elem))
+                        (values (p/t-elem-t elem) (state-index st))))
+        (define goto (for/hash ([(elem st) (in-hash (state-edges st))]
+                                #:when (ntelem? elem))
                        (values (ntelem-nt elem) (state-index st))))
         ;; FIXME: intern shift, goto?
         (define reduce
@@ -211,19 +213,20 @@
           (cond [(equal? (map reduction-nt reduce) (list start)) 'true]
                 [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
                 [else #f]))
-        (define lookahead/e
-          (cond [(null? reduce) #f]
-                [(and (hash-empty? shift) (<= (length reduce) 1)) #f]
-                [else (make-lookahead st reduce)]))
+        (define lookahead/e (make-lookahead st reduce))
         (define treader
-          (telems-consistent-tr
+          (elems-consistent-tr
            'lr-parser
-           (append (filter telem? (hash-keys (state-edges st)))
+           (append (filter p/t-elem? (hash-keys (state-edges st)))
                    (if lookahead/e (hash-keys lookahead/e) null))))
         (define lookahead
-          (and lookahead/e
-               (for/hash ([(elem red) (in-hash lookahead/e)])
-                 (values (telem-t elem) red))))
+          (cond [(or (null? reduce) (not lookahead/e)) #f]
+                ;; [(and (hash-empty? shift) (<= (length reduce) 1))
+                ;;  ;; I think this case can cause a parser to do more reductions
+                ;;  ;; before discovering that the next token is bad.
+                ;;  #f]
+                [else (for/hash ([(elem red) (in-hash lookahead/e)])
+                        (values (p/t-elem-t elem) red))]))
         (pstate index label treader shift reduce goto accept lookahead))
       (define pstates (make-vector (state-count)))
       (for ([(st index) (in-hash state-index-h)])
