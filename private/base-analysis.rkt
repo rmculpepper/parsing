@@ -39,6 +39,15 @@
 
     ;; ----------------------------------------
 
+    ;; Nullability and pure-elems: Traditionally, nullability means that a NT
+    ;; (or elemseq) can derive the empty string. It had consequences in terms of
+    ;; production selection eg for LL(1) parsers.
+
+    ;; In the presence of pure-elems, those two concepts no longer coincide.
+    ;; This library extends "nullable" to mean there is a path that reads no
+    ;; tokens *and* evaluates no pure expressions. Use *-minlen to determine if
+    ;; the empty string can be derived.
+
     (define nt-nullable-h
       (fixpoint
        (lambda (h)
@@ -52,10 +61,7 @@
     (define/public (nt-nullable? sym #:h [h nt-nullable-h])
       (hash-ref h sym #t))
     (define/public (elem-nullable? elem #:h [h nt-nullable-h])
-      (match elem
-        [(ntelem nt) (nt-nullable? nt #:h h)]
-        [(telem t tr) #f]
-        [(pure-elem _ _) #t]))
+      (match elem [(ntelem nt) (nt-nullable? nt #:h h)] [_ #f]))
     (define/public (item-nullable? item #:h [h nt-nullable-h])
       (for/and ([elem (in-vector item)]) (elem-nullable? elem #:h h)))
 
@@ -99,10 +105,7 @@
     (define/public (nt-first nt #:h [h nt-first-h])
       (hash-ref h nt null))
     (define/public (elem-first elem #:h [h nt-first-h])
-      (match elem
-        [(ntelem nt) (nt-first nt #:h h)]
-        [(? telem? t) (list t)]
-        [(pure-elem _ _) null]))
+      (match elem [(ntelem nt) (nt-first nt #:h h)] [_ (list elem)]))
     (define/public (item-first item #:h [h nt-first-h])
       (let loop ([i 0])
         (cond [(< i (vector-length item))
@@ -127,10 +130,7 @@
     (define/public (nt-final nt #:h [h nt-final-h])
       (hash-ref h nt null))
     (define/public (elem-final elem #:h [h nt-final-h])
-      (match elem
-        [(ntelem nt) (nt-final nt #:h h)]
-        [(? telem? t) (list t)]
-        [(pure-elem _ _) null]))
+      (match elem [(ntelem nt) (nt-final nt #:h h)] [_ (list elem)]))
     (define/public (item-final item #:h [h nt-final-h])
       (let loop ([i (sub1 (vector-length item))])
         (cond [(>= i 0)
@@ -153,8 +153,7 @@
                 (values (hash-set h nt (set-union (hash-ref h nt null) follows-this))
                         (set-union (nt-first nt)
                                    (if (nt-nullable? nt) follows-this null)))]
-               [(telem _ _) (values h (list elem))]
-               [(pure-elem _ _) (values h follows-this)]))))
+               [_ (values h (list elem))]))))
        (hash start (list (telem EOF #f)))))
 
     ;; *-follow : ... -> (Listof telem)
