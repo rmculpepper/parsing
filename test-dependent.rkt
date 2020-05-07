@@ -111,7 +111,8 @@
 
 ;; ----------------------------------------
 
-;; #:pure is not really implemented yet
+;; #:pure is problematic for productions notation: can't tell that the
+;; two pure expressions are "the same"
 #|
 (eprintf "\nExample d5:\n")
 (define-grammar d5
