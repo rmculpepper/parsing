@@ -88,6 +88,14 @@
           [else (with-tstack sk [s1 v2 sk**]
                   (loop sk** (sub1 arity) (cons v2 acc)))])))
 
+(define (with-tstack-peek-values sk arity onto k)
+  (define (rev-append xs ys) (foldl cons ys xs))
+  (let loop ([sk sk] [arity arity] [acc onto] [rev null])
+    (cond [(zero? arity) (k (rev-append rev sk) acc)]
+          [else
+           (with-tstack sk [s1 v2 sk**]
+             (loop sk** (sub1 arity) (cons v2 acc) (list* v2 s1 rev)))])))
+
 ;; ----------------------------------------
 
 (define (glr-parse states vals tz #:mode [mode 'complete])
@@ -159,12 +167,9 @@
           (cond [(filter:reject? (token-value* value))
                  (when KEEP-FAIL? (push! failed (cons value sk**)))]
                 [else (goto value sk** next-tok)]))
-        (case ctxn
-          [(0) (do-reduce args sk**)]
-          [(1) (with-tstack sk** [s1 v1 sk4]
-                 ;; must create an sk** consistent with only v1
-                 (do-reduce (cons v1 args) (list* s1 v1 sk4)))]
-          [else (error 'glr-parser "bad ctxn: ~e" ctxn)]))))
+        (with-tstack-peek-values sk** ctxn args
+          (lambda (new-sk** all-args)
+            (do-reduce all-args new-sk**))))))
 
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
     (define tr (stacks-consistent-tr sks))
