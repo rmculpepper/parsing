@@ -149,15 +149,22 @@
 
   (define (reduce st vsk* red next-tok)
     ;;(check-value-at-top? 'reduce/1 vsk*)
-    (match-define (reduction nt index arity action) red)
+    (match-define (reduction nt index arity ctxn action) red)
     (with-tstack-pop-values (cons st vsk*) arity
       (lambda (sk** args)
         ;;(check-state-at-top? 'reduce/2 sk**)
-        (define value (make-nt-token nt (apply (get-val action) args) args))
-        (dprintf "REDUCE(~s): ~v\n" nt value)
-        (cond [(filter:reject? (token-value* value))
-               (when KEEP-FAIL? (push! failed (cons value sk**)))]
-              [else (goto value sk** next-tok)]))))
+        (define (do-reduce all-args sk**)
+          (define value (make-nt-token nt (apply (get-val action) all-args) args))
+          (dprintf "REDUCE(~s): ~v\n" nt value)
+          (cond [(filter:reject? (token-value* value))
+                 (when KEEP-FAIL? (push! failed (cons value sk**)))]
+                [else (goto value sk** next-tok)]))
+        (case ctxn
+          [(0) (do-reduce args sk**)]
+          [(1) (with-tstack sk** [s1 v1 sk4]
+                 ;; must create an sk** consistent with only v1
+                 (do-reduce (cons v1 args) (list* s1 v1 sk4)))]
+          [else (error 'glr-parser "bad ctxn: ~e" ctxn)]))))
 
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
     (define tr (stacks-consistent-tr sks))

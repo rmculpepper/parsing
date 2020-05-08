@@ -71,10 +71,10 @@
 
   (define (loop-nt nt)
     (match (hash-ref table nt)
-      [(cons tr dispatch)
+      [(list* tr ctxn dispatch)
        (define next-tok (get-token #t tr null))
        (cond [(hash-ref dispatch (token-name next-tok) #f)
-              => (lambda (ps) (loop-prod (car ps)))]
+              => (lambda (ps) (loop-prod (car ps) ctxn))]
              [else (error 'll1-parse "NT = ~v, next = ~v" nt next-tok)])]))
 
   (define (loop-elem e lstack)
@@ -91,8 +91,9 @@
         (cons next-tok lstack)
         (error 'll1-parse "expected ~v, next = ~v" t next-tok)))
 
-  (define (loop-prod p)
+  (define (loop-prod p ctxn)
     (match-define (prod nt index item action) p)
+    (unless (zero? ctxn) (error 'll1-parse "parameters not implemented"))
     (apply-action action
                   (for/fold ([lstack null]) ([e (in-vector item)])
                     (loop-elem e lstack))))

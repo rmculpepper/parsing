@@ -45,8 +45,9 @@
 ;; A Grammar is (grammar NT (Listof Def) ValuesDesc)
 (struct grammar (start defs vals) #:prefab)
 
-;; A Def is (def NT (Listof Prod))
-(struct def (nt rhss) #:prefab)
+;; A Def is (def NT Nat (Listof Prod))
+;; ctxn is the number of extra value slots of context that action routines get.
+(struct def (nt ctxn rhss) #:prefab)
 
 ;; A Prod is (prod NT Nat ElemSequence Action)
 (struct prod (nt index item action) #:prefab)

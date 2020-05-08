@@ -12,7 +12,7 @@
 ;; Gotos = Hash[NT => Nat]
 
 (struct pstate (index label tr shift reduce goto accept lookahead) #:prefab)
-(struct reduction (nt index arity action) #:prefab)
+(struct reduction (nt index arity ctxn action) #:prefab)
 
 ;; Reduction = (reduction NT Nat Nat Action)
 ;; Action = Nat -- index in values vector

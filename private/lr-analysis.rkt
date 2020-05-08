@@ -22,7 +22,7 @@
   (match-define (grammar start defs vals) g)
   (define start-p (prod START 0 (vector-immutable (ntelem start) EOF-elem) (vector-length vals)))
   (define vals* (list->vector (append (vector->list vals) (list (lambda (s e) s)))))
-  (grammar START (cons (def START (list start-p)) defs) vals))
+  (grammar START (cons (def START 0 (list start-p)) defs) vals))
 
 (define DOT (string->uninterned-symbol "•"))
 ;;(define DOT (string->uninterned-symbol "◇"))
@@ -78,8 +78,8 @@
   (class grammar-base%
     (init-field [lookahead-mode 'slr1]) ;; (U 'lr0 'slr1 'lalr1)
     (super-new)
-    (inherit-field g start nt-h)
-    (inherit nt? nt-follow)
+    (inherit-field g start def-h)
+    (inherit nt? nt-follow nt-ctxn)
 
     (define/public (get-vals) (grammar-vals g))
 
@@ -88,8 +88,8 @@
     ;; ----------------------------------------
 
     (define nt-lrprods-h
-      (for/hash ([(nt prods) (in-hash nt-h)])
-        (values nt (map prod->initial-lrprod prods))))
+      (for/hash ([(nt def) (in-hash def-h)])
+        (values nt (map prod->initial-lrprod (def-rhss def)))))
 
     (define/public (nt-lrprods nt)
       ;; Returns the list of { NT -> DOT <Item> } productions (that is, DOT-first)
@@ -185,7 +185,7 @@
       (define reduce
         (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))
           (match-define (cons _ (prod nt index item action)) lrp)
-          (reduction nt index (vector-length item) action)))
+          (reduction nt index (vector-length item) (nt-ctxn nt) action)))
       (define accept
         (cond [(equal? (map reduction-nt reduce) (list start)) 'true]
               [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
@@ -235,7 +235,7 @@
 
     (define/private ((make-slr1-lookahead) _st reduce)
       (for/fold ([h (hash)]) ([red (in-list reduce)])
-        (match-define (reduction red-nt _ _ _) red)
+        (define red-nt (reduction-nt red))
         (define follows (nt-follow red-nt))
         (for/fold ([h h]) ([t (in-list follows)])
           (hash-cons h t red))))
@@ -269,10 +269,10 @@
         (for*/fold ([h (hash)]) ([st (in-states)] [lrp (in-list st)] #:when (lrprod-dot-initial? lrp))
           (match-define (cons 0 (prod nt index item action)) lrp)
           (define nnt (mknnt st nt))
-          (hash-cons h nnt (prod nnt index (get-nitem st item) action))))
+          (hash-cons h nnt (prod nnt index (get-nitem st item) 'unused-action))))
       (grammar (mknnt state0 start)
-               (for/list ([(nnt prods) (in-hash ndef-h)]) (def nnt (reverse prods)))
-               (get-vals)))
+               (for/list ([(nnt prods) (in-hash ndef-h)]) (def nnt 'unused (reverse prods)))
+               'unused-vals))
 
     ;; ----------------------------------------
 

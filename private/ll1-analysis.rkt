@@ -24,17 +24,17 @@
     (define/public (get-vals) (grammar-vals g))
 
     (define/public (def->entry d)
-      (match-define (def nt rhss) d)
+      (match-define (def nt ctxn rhss) d)
       (define tr
         (let ([elems (set-union (nt-first nt) (if (nt-nullable? nt) (nt-follow nt) null))])
           (elems-consistent-tr 'll1-parser elems)))
-      (cons tr
-            (for/fold ([h (hash)]) ([p (in-list rhss)])
-              (match-define (prod nt index item action) p)
-              (define telems
-                (set-union (item-first item) (if (item-nullable? item) (nt-follow nt) null)))
-              (for/fold ([h h]) ([te (in-list telems)])
-                (hash-cons h (telem-t te) p)))))
+      (list* tr ctxn
+             (for/fold ([h (hash)]) ([p (in-list rhss)])
+               (match-define (prod nt index item action) p)
+               (define telems
+                 (set-union (item-first item) (if (item-nullable? item) (nt-follow nt) null)))
+               (for/fold ([h h]) ([te (in-list telems)])
+                 (hash-cons h (telem-t te) p)))))
 
     (define ll1-table
       ;; Hash[NT => Hash[Terminal => (cons Nat (Listof Prod))]

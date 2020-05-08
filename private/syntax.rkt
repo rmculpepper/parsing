@@ -31,16 +31,26 @@
   (define (intern-value! id)
     (add-value! (free-id-table-ref! (intern-table) id id)))
 
+  (define params-spec (make-parameter #f)) ;; #f or (listof Identifier)
+
   (define (map-apply fs . xs) (for/list ([f (in-list fs)]) (apply f xs)))
   (define (mk-$n n) (format-id (current-syntax-context) "$~a" n))
 
   (define-syntax-class ntdef #:attributes (nt nt.ast mkast)
     #:description "nonterminal definition"
-    (pattern [nt:symbol rhs:ntrhs ...]
+    (pattern [nt:symbol ps:params-clause rhs:ntrhs ...]
              #:attr mkast (lambda (nt?)
-                            (def ($ nt.ast)
-                              (for/list ([rhs-mkast (in-list ($ rhs.mkast))] [index (in-naturals)])
-                                (rhs-mkast ($ nt.ast) index nt?))))))
+                            (def ($ nt.ast) (if ($ ps.spec) 1 0)
+                              (parameterize ((params-spec ($ ps.spec)))
+                                (for/list ([rhs-mkast (in-list ($ rhs.mkast))] [index (in-naturals)])
+                                  (rhs-mkast ($ nt.ast) index nt?)))))))
+
+  (define-splicing-syntax-class params-clause #:attributes (spec)
+    #:description "parameters clause"
+    (pattern (~seq #:parameters (param:id ...))
+             #:attr spec (syntax->list #'(param ...)))
+    (pattern (~seq)
+             #:attr spec #f))
 
   (define-syntax-class ntrhs #:attributes (mkast)
     (pattern [es:elemseq a:action]
@@ -177,10 +187,22 @@
   (define (wrap-expr expr venv)
     (define rvenv (reverse venv)) ;; arguments are first-bound to last-bound
     (define tok-vars (generate-temporaries rvenv))
-    (define bindings
+    (define-values (param-vars param-bindings)
+      (cond [(params-spec)
+             => (lambda (params)
+                  (values (list #'nt-parameters)
+                          (list #`[#,params (apply values (token-value nt-parameters))])))]
+            [else (values null null)]))
+    (define tok-bindings
       (for/list ([tvar (in-list tok-vars)] [vvar (in-list rvenv)] #:when (identifier? vvar))
         #`[#,vvar (token-variable (quote-syntax #,vvar) (quote-syntax #,tvar))]))
-    #`(lambda #,tok-vars (letrec-syntax #,bindings #,expr)))
+    (with-syntax ([(tok-var ...) tok-vars]
+                  [(tok-binding ...) tok-bindings]
+                  [(param-var ...) param-vars]
+                  [(param-binding ...) param-bindings]
+                  [expr expr])
+      #'(lambda (param-var ... tok-var ...)
+          (let-values (param-binding ...) (letrec-syntax (tok-binding ...) expr)))))
 
   (define (parse-grammar start defs #:context ctx)
     (syntax-parse (cons start defs)

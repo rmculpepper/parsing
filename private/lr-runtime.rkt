@@ -56,9 +56,10 @@
           [else (shift stack)]))
 
   (define (reduce stack red)
-    (match-define (reduction nt index arity action) red)
+    (match-define (reduction nt index arity ctxn action) red)
     (define-values (args stack*) (pop-values arity stack))
-    (define value (make-nt-token nt (apply (get-val action) args) args))
+    (define args* (peek/prepend-values ctxn stack* args))
+    (define value (make-nt-token nt (apply (get-val action) args*) args))
     (cond [(filter:reject? (token-value* value))
            (fail 'reduce stack value)]
           [else
@@ -97,6 +98,10 @@
     (if (zero? arity)
         (values acc stack)
         (loop (sub1 arity) (cddr stack) (cons (cadr stack) acc)))))
+
+(define (peek/prepend-values n stack onto)
+  (let loop ([n n] [stack stack] [acc onto])
+    (if (zero? n) acc (loop (sub1 n) (cddr stack) (cons (cadr stack) acc)))))
 
 (define (apply->token f args)
   (define v (apply f args))

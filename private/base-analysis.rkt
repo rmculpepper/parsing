@@ -30,12 +30,17 @@
 
     ;; ----------------------------------------
 
-    (field [nt-h (for/hash ([def defs]) (values (def-nt def) (def-rhss def)))])
+    (field [def-h (for/hash ([def defs]) (values (def-nt def) def))])
 
-    (define/public (nt? sym) (and (hash-ref nt-h sym #f) #t))
+    (define/public (nt? sym) (and (hash-ref def-h sym #f) #t))
 
     (define/public (nt-rhss nt)
-      (or (hash-ref nt-h nt #f) (error 'nt-rhss "undefined nonterminal: ~e" nt)))
+      (def-rhss (or (hash-ref def-h nt #f)
+                    (error 'nt-rhss "undefined nonterminal: ~e" nt))))
+
+    (define/public (nt-ctxn nt)
+      (def-ctxn (or (hash-ref def-h nt #f)
+                    (error 'nt-ctxn "undefined nonterminal: ~e" nt))))
 
     ;; ----------------------------------------
 
