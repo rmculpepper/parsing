@@ -81,20 +81,18 @@
 ;; - sk, sk** : StStack
 ;; - vsk*     : VStack
 
-(define (with-tstack-pop-values sk arity k)
-  ;;(check-state-at-top? 'with-stack-pop-values sk)
-  (let loop ([sk sk] [arity arity] [acc null])
-    (cond [(zero? arity) (k sk acc)]
+(define (with-tstack-pop/peek-values sk popn peekn k)
+  (let loop ([sk sk] [popn popn] [acc null])
+    (cond [(zero? popn) (with-tstack-peek-values sk peekn acc k)]
           [else (with-tstack sk [s1 v2 sk**]
-                  (loop sk** (sub1 arity) (cons v2 acc)))])))
+                  (loop sk** (sub1 popn) (cons v2 acc)))])))
 
-(define (with-tstack-peek-values sk arity onto k)
+(define (with-tstack-peek-values sk peekn onto k)
   (define (rev-append xs ys) (foldl cons ys xs))
-  (let loop ([sk sk] [arity arity] [acc onto] [rev null])
-    (cond [(zero? arity) (k (rev-append rev sk) acc)]
-          [else
-           (with-tstack sk [s1 v2 sk**]
-             (loop sk** (sub1 arity) (cons v2 acc) (list* v2 s1 rev)))])))
+  (let loop ([sk sk] [peekn peekn] [acc onto] [revsk null])
+    (cond [(zero? peekn) (k (rev-append revsk sk) onto acc)]
+          [else (with-tstack sk [s1 v2 sk**]
+                  (loop sk** (sub1 peekn) (cons v2 acc) (list* v2 s1 revsk)))])))
 
 ;; ----------------------------------------
 
@@ -158,18 +156,13 @@
   (define (reduce st vsk* red next-tok)
     ;;(check-value-at-top? 'reduce/1 vsk*)
     (match-define (reduction nt index arity ctxn action) red)
-    (with-tstack-pop-values (cons st vsk*) arity
-      (lambda (sk** args)
-        ;;(check-state-at-top? 'reduce/2 sk**)
-        (define (do-reduce all-args sk**)
-          (define value (make-nt-token nt (apply (get-val action) all-args) args))
-          (dprintf "REDUCE(~s): ~v\n" nt value)
-          (cond [(filter:reject? (token-value* value))
-                 (when KEEP-FAIL? (push! failed (cons value sk**)))]
-                [else (goto value sk** next-tok)]))
-        (with-tstack-peek-values sk** ctxn args
-          (lambda (new-sk** all-args)
-            (do-reduce all-args new-sk**))))))
+    (with-tstack-pop/peek-values (cons st vsk*) arity ctxn
+      (lambda (sk** args all-args)
+        (define value (make-nt-token nt (apply (get-val action) all-args) args))
+        (dprintf "REDUCE(~s): ~v\n" nt value)
+        (cond [(filter:reject? (token-value* value))
+               (when KEEP-FAIL? (push! failed (cons value sk**)))]
+              [else (goto value sk** next-tok)]))))
 
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
     (define tr (stacks-consistent-tr sks))
