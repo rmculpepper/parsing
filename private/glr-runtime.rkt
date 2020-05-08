@@ -43,16 +43,6 @@
 
 (define (singleton? x) (and (pair? x) (null? (cdr x))))
 
-#|
-(define (check-state-at-top? who tsk)
-  (with-tstack-look tsk 1
-    (lambda (st tsk*) (unless (pstate? st) (error who "top of stack is not state: ~v" tsk)))))
-(define (check-value-at-top? who tsk)
-  (unless (null? tsk)
-    (with-tstack-look tsk 1
-      (lambda (st tsk*) (unless (pair? st) (error who "top of stack is not value: ~v" tsk))))))
-|#
-
 ;; stacks-consistent-tr : (Listof StStack) -> TR
 ;; FIXME: in GLR, if token arguments, *values* must be consistent, not just exprs
 ;; For now, just disallow parameters.
@@ -119,18 +109,15 @@
   ;; Runs each "thread" in sk until it needs input and adds to ready
   ;; list. A thread may fork or fail.
   (define (run-until-look sk next-tok)
-    ;;(check-state-at-top? 'run-until-look/1 sk)
     (with-tstack sk [st vsk*] (run-until-look* st vsk* next-tok)))
   (define (run-until-look* st vsk* next-tok)
     (dprintf "\nR2L STATE = #~v, ~s\n" (pstate-index st) (pstate-label st))
     (cond [(and (eq? (pstate-accept st) 'true))
            ;; we got here by a shift; discard shift and return state
-           ;;(check-value-at-top? 'run-until-look/2 vsk*)
            (dprintf "-- R2L #~s accept\n" (pstate-index st))
            (with-tstack vsk* [v1 s2 v3 sk**]
              (push! done v3))]
           [(and (eq? (pstate-accept st) 'virtual) (memq mode '(first-done)))
-           ;;(check-value-at-top? 'run-until-look/3 vsk*)
            ;; we got here by a goto; result is first value
            (dprintf "-- R2L #~s virtual accept\n" (pstate-index st))
            (with-tstack vsk* [v1 sk**]
@@ -154,7 +141,6 @@
                   (push! ready (cons st vsk*))])]))
 
   (define (reduce st vsk* red next-tok)
-    ;;(check-value-at-top? 'reduce/1 vsk*)
     (match-define (reduction nt index arity ctxn action) red)
     (with-tstack-pop/peek-values (cons st vsk*) arity ctxn
       (lambda (sk** args all-args)
@@ -173,7 +159,6 @@
       (match-define (cons st vsk*) sk)
       (look* sk st vsk* next-tok)))
   (define (look* sk st vsk* next-tok) ;; sk = (cons st vsk*) or #f, saves re-alloc
-    ;;(check-value-at-top? 'shift/1 vsk*)
     (define reds (hash-ref (or (pstate-lookahead st) #hash()) (token-name next-tok) null))
     (for ([red (in-list reds)] [i (in-naturals)])
       (dprintf "-- L #~s reduction ~s/~s\n" (pstate-index st) (add1 i) (length reds))
@@ -195,7 +180,6 @@
 
   (define (goto reduced sk next-tok)
     (with-tstack sk [st vsk*]
-      ;;(check-value-at-top? 'goto/1 vsk*)
       (dprintf "RETURN VIA #~s\n" (pstate-index st))
       (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
       (dprintf "GOTO ~v\n" next-state)
