@@ -5,7 +5,6 @@
 ;; PState = (pstate StIndex Label TR Shifts Reduces Gotos Accept Lookahead)
 ;; StIndex = Nat
 ;; Label = Any
-;; TR = TokenReaderSpec or #f
 ;; Shifts = Hash[TerminalSymbol => Nat]
 ;; Reduces = (Listof Reduction)
 ;; Lookahead = #f | Hash[TerminalSymbol => Reduces]
@@ -13,6 +12,11 @@
 
 (struct pstate (index label tr shift reduce goto accept lookahead) #:prefab)
 (struct reduction (nt index arity ctxn action) #:prefab)
+
+;; TR =
+;; | TokenReaderSpec    -- read next token using given reader
+;; | #f                 -- this state does not read; shift and lookahead = #f
+;; | '#:top             -- use the value from the top of the stack; reduces = null
 
 ;; Reduction = (reduction NT Nat Nat Action)
 ;; Action = Nat -- index in values vector

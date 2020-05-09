@@ -82,14 +82,14 @@
       [(ntelem nt)
        (cons (token nt (loop-nt nt)) lstack)]
       [(telem t tr)
-       (loop-token t (get-token #f tr lstack) lstack)]
-      [(pure-elem t ue)
-       (loop-token t (eval-user-expr ue lstack) lstack)]))
-
-  (define (loop-token t next-tok lstack)
-    (if (eqv? t (token-name next-tok))
-        (cons next-tok lstack)
-        (error 'll1-parse "expected ~v, next = ~v" t next-tok)))
+       (define next-tok (get-token #f tr lstack))
+       (if (eqv? t (token-name next-tok))
+           (cons next-tok lstack)
+           (error 'll1-parse "expected ~v, next = ~v" t next-tok))]
+      [(top-elem t)
+       (if (eqv? t (token-value (car lstack)))
+           lstack
+           (error 'll1-parse "expected ~v, top = ~v" t (car lstack)))]))
 
   (define (loop-prod p ctxn)
     (match-define (prod nt index item action) p)

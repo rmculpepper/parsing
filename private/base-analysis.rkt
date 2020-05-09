@@ -26,7 +26,7 @@
          (match elem
            [(ntelem nt) (generate nt)]
            [(telem t _) (list (list t))]
-           [(pure-elem _ _) (list null)]))))
+           [(top-elem _) (list null)]))))
 
     ;; ----------------------------------------
 
@@ -44,15 +44,6 @@
 
     ;; ----------------------------------------
 
-    ;; Nullability and pure-elems: Traditionally, nullability means that a NT
-    ;; (or elemseq) can derive the empty string. It had consequences in terms of
-    ;; production selection eg for LL(1) parsers.
-
-    ;; In the presence of pure-elems, those two concepts no longer coincide.
-    ;; This library extends "nullable" to mean there is a path that reads no
-    ;; tokens *and* evaluates no pure expressions. Use *-minlen to determine if
-    ;; the empty string can be derived.
-
     (define nt-nullable-h
       (fixpoint
        (lambda (h)
@@ -66,7 +57,10 @@
     (define/public (nt-nullable? sym #:h [h nt-nullable-h])
       (hash-ref h sym #t))
     (define/public (elem-nullable? elem #:h [h nt-nullable-h])
-      (match elem [(ntelem nt) (nt-nullable? nt #:h h)] [_ #f]))
+      (match elem
+        [(ntelem nt) (nt-nullable? nt #:h h)]
+        [(telem t tr) #f]
+        [(top-elem t) #t]))
     (define/public (item-nullable? item #:h [h nt-nullable-h])
       (for/and ([elem (in-vector item)]) (elem-nullable? elem #:h h)))
 
@@ -90,7 +84,7 @@
       (match elem
         [(ntelem nt) (nt-minlen nt #:h h)]
         [(telem t tr) 1]
-        [(pure-elem _ _) 0]))
+        [(top-elem _ _) 0]))
     (define/public (item-minlen item #:h [h nt-minlen-h])
       (for/sum ([elem (in-vector item)]) (elem-minlen elem #:h h)))
 
@@ -110,7 +104,10 @@
     (define/public (nt-first nt #:h [h nt-first-h])
       (hash-ref h nt null))
     (define/public (elem-first elem #:h [h nt-first-h])
-      (match elem [(ntelem nt) (nt-first nt #:h h)] [_ (list elem)]))
+      (match elem
+        [(ntelem nt) (nt-first nt #:h h)]
+        [(? telem?) (list elem)]
+        [(? top-elem?) null]))
     (define/public (item-first item #:h [h nt-first-h])
       (let loop ([i 0])
         (cond [(< i (vector-length item))
@@ -135,7 +132,10 @@
     (define/public (nt-final nt #:h [h nt-final-h])
       (hash-ref h nt null))
     (define/public (elem-final elem #:h [h nt-final-h])
-      (match elem [(ntelem nt) (nt-final nt #:h h)] [_ (list elem)]))
+      (match elem
+        [(ntelem nt) (nt-final nt #:h h)]
+        [(? telem?) (list elem)]
+        [(? top-elem?) null]))
     (define/public (item-final item #:h [h nt-final-h])
       (let loop ([i (sub1 (vector-length item))])
         (cond [(>= i 0)
@@ -158,7 +158,8 @@
                 (values (hash-set h nt (set-union (hash-ref h nt null) follows-this))
                         (set-union (nt-first nt)
                                    (if (nt-nullable? nt) follows-this null)))]
-               [_ (values h (list elem))]))))
+               [(? telem?) (values h (list elem))]
+               [(? top-elem?) h follows-this]))))
        (hash start (list (telem EOF #f)))))
 
     ;; *-follow : ... -> (Listof telem)

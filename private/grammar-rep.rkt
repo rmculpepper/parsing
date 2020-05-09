@@ -56,22 +56,10 @@
 ;; An Element is one of
 ;; - (ntelem NT)
 ;; - (telem Terminal TokenReaderSpec)
-;; - (pure-elem Terminal UserExpr)
+;; - (top-elem Terminal)    -- look at the top *value*
 (struct ntelem (nt) #:prefab)
 (struct telem (t tr) #:prefab)
-(struct pure-elem (t expr) #:prefab)
-
-;; A pure-elem represents a Racket computation that produces a Token without
-;; reading from the input. The expression should be pure. It is beneficial to
-;; know when two expressions are the same; it eliminates spurious conflicts. For
-;; example, the following parser-expression
-;;   (case/p <expr> [true pexpr1] [false pexpr2])
-;; might be translated to the following productions:
-;;   [( [true  : #:pure <expr>] pexpr1 ) _]
-;;   [( [false : #:pure <expr>] pexpr2 ) _]
-;; If we recognize that the two occurrences of <expr> are the same, we can
-;; conclude that the two productions are mutually exclusive. But the equivalence
-;; of Racket expressions is undecidable, so we must approximate.
+(struct top-elem (t) #:prefab)
 
 ;; ValuesDesc = (Vectorof Syntax[Expr])   -- at compile time
 ;; ValuesDesc = (Vectorof Value)          -- at run time
@@ -93,26 +81,21 @@
 ;; all threads, for a GLR parser) must agree on what TokenReader to
 ;; use. It is useful to check agreement statically, especially for
 ;; deterministic parsers, but expression equivalence is undecidable in
-;; general, so we can only approximate. This issue can be avoided
-;; (somewhat) by parser-expression front end, eg a case/p form, but it
-;; is difficult for classical production/clause-based notations. A
-;; more transparent UserExpr representation might allow the static
-;; checker to equate more expressions.
+;; general, so we can only approximate. This issue can be difficult
+;; for classical production/clause-based notations. A more transparent
+;; UserExpr representation might allow the static checker to equate
+;; more expressions.
 
 ;; An alternative to static checking is dynamic checking or a hybrid.
 
-(define (p/t-elem? v) (or (telem? v) (pure-elem? v)))
-(define (p/t-elem-t v) (match v [(telem t _) t] [(pure-elem t _) t]))
-(define (p/t-elem-tr v) (match v [(telem _ tr) tr] [(pure-elem _ e) (cons '#:pure e)]))
-
 (define (elems-consistent-tr who elems)
-  (define proper-elems (filter p/t-elem-tr elems)) ;; ignore polymorphic tokens like EOF
-  (match (group-by p/t-elem-tr proper-elems)
+  (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
+  (match (group-by telem-tr proper-elems)
     [(list) default-tr]
     [(list group)
-     (p/t-elem-tr (car group))]
+     (telem-tr (car group))]
     [groups
-     (define kinds (map p/t-elem-tr (map car groups)))
+     (define kinds (map telem-tr (map car groups)))
      (error who "inconsistent token readers\n  readers: ~v" kinds)]))
 
 
