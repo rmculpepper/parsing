@@ -75,14 +75,25 @@
   (let loop ([sk sk] [popn popn] [acc null])
     (cond [(zero? popn) (with-tstack-peek-values sk peekn acc k)]
           [else (with-tstack sk [s1 v2 sk**]
-                  (loop sk** (sub1 popn) (cons v2 acc)))])))
+                  (cond [(no-value? v2)
+                         (loop sk** popn acc)]
+                        [else
+                         (loop sk** (sub1 popn) (cons v2 acc))]))])))
 
 (define (with-tstack-peek-values sk peekn onto k)
   (define (rev-append xs ys) (foldl cons ys xs))
   (let loop ([sk sk] [peekn peekn] [acc onto] [revsk null])
     (cond [(zero? peekn) (k (rev-append revsk sk) onto acc)]
           [else (with-tstack sk [s1 v2 sk**]
-                  (loop sk** (sub1 peekn) (cons v2 acc) (list* v2 s1 revsk)))])))
+                  (cond [(no-value? v2)
+                         (loop sk** peekn acc (list* v2 s1 revsk))]
+                        [else
+                         (loop sk** (sub1 peekn) (cons v2 acc) (list* v2 s1 revsk))]))])))
+
+;; Unlike lr-parse, glr-parse pushes a special "no-value" on top-elem.
+;; Must filter out on peek/pop.
+(define (no-value) (void))
+(define (no-value? x) (void? x))
 
 ;; ----------------------------------------
 
@@ -96,7 +107,6 @@
 
   (define (get-next-token tr)
     ;; FIXME: for now, just support no-argument token-readers
-    ;; FIXME: no need to treat '#:apply as actual token read! no need to sync!
     (match tr
       [(? symbol? tk) (tz #f tk null)]
       [_ (error 'glr-parse "unsupported token reader: ~e" tr)]))
@@ -129,6 +139,13 @@
                                 (pstate-index st) (token-name next-tok))
                        (look* #f st vsk* next-tok)]
                       [else (push! ready (cons st vsk*))]))]
+          [(eq? (pstate-tr st) '#:top)
+           (with-tstack vsk* [v1 sk**]
+             (cond [(or (hash-ref (pstate-shift st) (token-value* v1 '#:else) #f)
+                        (hash-ref (pstate-shift st) '#:else #f))
+                    => (lambda (next-state)
+                         (run-until-look (list* (get-state next-state) no-value st v1 sk**)))]
+                   [else (push! failed (list* v1 st vsk*))]))]
           [else
            (for ([red (pstate-reduce st)] [i (in-naturals)])
              (dprintf "-- R2L #~s reduction ~s/~s\n"
