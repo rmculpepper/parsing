@@ -1,11 +1,11 @@
 #lang racket/base
 (require (for-syntax racket/base
                      racket/syntax
-                     syntax/id-table
                      syntax/transformer
                      syntax/free-vars
                      (rename-in syntax/parse [attribute $])
                      "../util/datum-to-expr.rkt"
+                     "../util/misc.rkt"
                      "grammar-rep.rkt")
          "common.rkt")
 (provide (all-defined-out) (for-syntax (all-defined-out)))
@@ -24,12 +24,8 @@
 ;; - [T #:pure Expr]            -- short for [_ name T #:pure Expr]
 
 (begin-for-syntax
-  (define intern-table (make-parameter #f)) ;; free-id-table[Id]
-  (define value-table (make-parameter #f)) ;; Hash[Syntax => Nat]
-  (define (add-value! stx)
-    (let* ([h (value-table)] [index (hash-count h)]) (hash-ref! h stx index)))
-  (define (intern-value! id)
-    (add-value! (free-id-table-ref! (intern-table) id id)))
+  (define value-table (make-parameter #f)) ;; Indexer[Syntax]
+  (define (add-value! stx) (indexer-add! (value-table) stx))
 
   (define params-spec (make-parameter #f)) ;; #f or (listof Identifier)
 
@@ -154,11 +150,6 @@
                                        (or (char? v) (boolean? v) (exact-integer? v)))))
              #:attr ast (syntax-e #'x)))
 
-  (define (index-hash->vector h)
-    (define v (make-vector (hash-count h)))
-    (for ([(e i) (in-hash h)]) (vector-set! v i e))
-    v)
-
   (struct token-variable (vvar tvar)
     #:property prop:procedure
     (lambda (self stx)
@@ -210,9 +201,9 @@
       [(start:symbol d:ntdef ...)
        (define (nt? s) (member s ($ d.nt.ast)))
        (unless (nt? ($ start.ast)) (wrong-syntax #'start "expected nonterminal symbol"))
-       (parameterize ((intern-table (make-free-id-table)) (value-table (make-hash)))
+       (parameterize ((value-table (make-indexer)))
          (define defs (map-apply ($ d.mkast) nt?))
-         (grammar ($ start.ast) defs (index-hash->vector (value-table))))]))
+         (grammar ($ start.ast) defs (indexer->vector (value-table))))]))
 
   (void))
 

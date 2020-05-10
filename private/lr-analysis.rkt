@@ -20,8 +20,7 @@
 
 (define (lr-adjust-grammar g)
   (match-define (grammar start defs vals) g)
-  (define start-p (prod START 0 (vector-immutable (ntelem start) EOF-elem) (vector-length vals)))
-  (define vals* (list->vector (append (vector->list vals) (list (lambda (s e) s)))))
+  (define start-p (prod START 0 (vector-immutable (ntelem start) EOF-elem) 'accept))
   (grammar START (cons (def START 0 (list start-p)) defs) vals))
 
 (define DOT (string->uninterned-symbol "•"))
@@ -83,8 +82,6 @@
 
     (define/public (get-vals) (grammar-vals g))
 
-    (define-syntax-rule (push! var elem) (set! var (cons elem var)))
-
     ;; ----------------------------------------
 
     (define nt-lrprods-h
@@ -100,17 +97,23 @@
         [(ntelem nt) (nt-lrprods nt)]
         [_ null]))
 
-    (define state-intern-h (make-hash)) ;; intern table
-    (define/private (intern-state state) (hash-ref! state-intern-h state state))
+    ;; ----------------------------------------
+
+    (define state-ix (make-indexer)) ;; Indexer[State]
+    (define/private (intern-state state) (indexer-intern! state-ix state))
+    (define/private (state-index state) (indexer-get-index state-ix state))
+    (define/private (index->state index) (indexer-get-value state-ix index))
 
     (define/public (kernel->state lrps)
+      ;; FIXME: if state generated with kernel (initial productions)
+      ;; in different order, then won't get merged with existing?
       (define state (list-closure lrps (lambda (lrp) (lrprod-children lrp))))
       (intern-state state))
 
     (define state0 (kernel->state (nt-lrprods start)))
-    (define-syntax-rule (in-states) (in-hash-keys state-intern-h))
+    (define-syntax-rule (in-states) (in-indexer-values state-ix))
 
-    (define state-edge-h
+    (define state-edge-h ;; Hash[State => Hash[Elem => State]]
       (closure (list state0)
                (lambda (state)
                  (define groups ;; Hash[Elem => (Listof LR0-Prod)]
@@ -124,7 +127,7 @@
     (define/public (state-edges state) (hash-ref state-edge-h state))
     (define/public (state-edge state sym) (hash-ref (state-edges state) sym #f))
 
-    (define state-pred-h
+    (define state-pred-h ;; Hash[State => Hash[Elem => (Listof State)]]
       (for/fold ([h (hash)]) ([st1 (in-states)])
         (for/fold ([h h]) ([(elem st2) (in-hash (state-edges st1))])
           (hash-update h st2 (lambda (h*) (hash-cons h* elem st1)) (hash)))))
@@ -141,37 +144,7 @@
       (for/fold ([sts (list st)]) ([n (in-range (reduction-arity red))])
         (apply set-union null (for/list ([st (in-list sts)]) (state-all-preds st)))))
 
-    ;; state-reduce-goto : State Reduction -> (Listof State)
-    (define/public (state-reduce-goto st red)
-      ;; Given state and reduction (from a final LR0-Item), returns the states
-      ;; that might follow from a single reduce/goto pair of edges.
-      (apply set-union null
-             (for/list ([ret-st (in-list (state-reduce-origin st red))])
-               (state-edge ret-st (reduction-nt red)))))
-
     ;; ========================================
-
-    (define state-index-h
-      (let ([next-index 0])
-        (define (get-index) (begin0 next-index (set! next-index (add1 next-index))))
-        (closure (list state0)
-                 (lambda (state) (hash-values (state-edges state)))
-                 #:store (lambda (x) (get-index)))))
-    (define/private (state-index state) (hash-ref state-index-h state))
-    (define/private (state-count) (hash-count state-index-h))
-
-    (define state-from-index-h
-      (for/fold ([h (hash)]) ([(s i) (in-hash state-index-h)]) (hash-set h i s)))
-    (define/private (index->state index) (hash-ref state-from-index-h index))
-
-    ;; ========================================
-
-    (define/private (make-pstates)
-      (define get-lookahead (make-get-lookahead))
-      (define pstates (make-vector (state-count)))
-      (for ([(st index) (in-hash state-index-h)])
-        (vector-set! pstates index (state->pstate st index get-lookahead)))
-      pstates)
 
     (define/private (state->pstate st index get-lookahead)
       (define label (lr-state-label st))
@@ -254,17 +227,13 @@
 
     (define/private (reify-lr0)
       ;; Reifies the LR0 state graph as a grammar.
-      (define nnt-intern-h (make-hash))
       (define (mknnt st nt) (cons (state-index st) nt))
       (define (get-nitem st item)
-        (list->vector
-         (let loop ([st st] [i 0])
-           (cond [(< i (vector-length item))
-                  (define elemi (vector-ref item i))
-                  (define next-st (state-edge st elemi))
-                  (cons (match elemi [(ntelem nt) (ntelem (mknnt st nt))] [_ elemi])
-                        (loop next-st (add1 i)))]
-                 [else null]))))
+        (for/fold ([st st] [acc null] #:result (list->vector (reverse acc)))
+                  ([elem (in-vector item)])
+          (define next-st (state-edge st elem))
+          (define elem* (match elem [(ntelem nt) (ntelem (mknnt st nt))] [_ elem]))
+          (values next-st (cons elem* acc))))
       (define ndef-h ;; FIXME: use lists, group-by instead of hash
         (for*/fold ([h (hash)]) ([st (in-states)] [lrp (in-list st)] #:when (lrprod-dot-initial? lrp))
           (match-define (cons 0 (prod nt index item action)) lrp)
@@ -299,7 +268,12 @@
 
     ;; ========================================
 
-    (define pstates (make-pstates))
+    (define pstates
+      (let ([get-lookahead (make-get-lookahead)])
+        (indexer->vector state-ix
+                         (lambda (index state)
+                           (state->pstate state index get-lookahead)))))
+
     (define/public (get-pstates) pstates)
     (define/public (get-lr0-conflicts) (get-conflicts #f))
     (define/public (get-conflicts [use-lookahead? #t])

@@ -1,8 +1,5 @@
 #lang racket/base
-(provide define/memo
-         fixpoint
-         closure
-         list-closure)
+(provide (all-defined-out))
 
 (define-syntax-rule (define/memo (fun arg ...) . body)
   (begin (define fun-table (make-hash))
@@ -37,3 +34,48 @@
            (loop (cons (car worklist) acc)
                  (append children (cdr worklist))
                  (hash-set h (car worklist) #t))])))
+
+;; ----------------------------------------
+
+;; Indexer[X] = (indexer Hash[X => Nat] Hash[Nat => X])
+(struct indexer (to from) #:transparent)
+
+(define (make-indexer [seq null])
+  (define ix (indexer (make-hash) (make-hasheqv)))
+  (for ([e seq]) (indexer-add! e))
+  ix)
+
+(define (indexer-count ix) (hash-count (indexer-to ix)))
+
+(define (indexer-add! ix e)
+  (define to (indexer-to ix))
+  (cond [(hash-ref to e #f)
+         => values]
+        [else
+         (define from (indexer-from ix))
+         (define k (hash-count to))
+         (hash-set! to e k)
+         (hash-set! from k e)
+         k]))
+
+(define (indexer-intern! ix e)
+  (define k (indexer-add! ix e))
+  (hash-ref (indexer-from ix) k))
+
+(define (indexer-get-index ix e)
+  (hash-ref (indexer-to ix) e #f))
+(define (indexer-get-value ix k)
+  (hash-ref (indexer-from ix) k #f))
+
+(define (indexer->vector ix [f (lambda (k v) v)])
+  (define from (indexer-from ix))
+  (define vec (make-vector (hash-count from)))
+  (for ([(k v) (in-hash from)]) (vector-set! vec k (f k v)))
+  vec)
+
+(define-syntax-rule (in-indexer ix)
+  (in-hash (indexer-to ix)))
+
+(define-syntax-rule (in-indexer-values ix)
+  ;; Note: not ordered!
+  (in-hash-keys (indexer-to ix)))
