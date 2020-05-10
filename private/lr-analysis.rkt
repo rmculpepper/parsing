@@ -26,27 +26,30 @@
 (define DOT (string->uninterned-symbol "•"))
 ;;(define DOT (string->uninterned-symbol "◇"))
 
-;; An LR0-Prod is (cons Nat Prod), where the nat is in [0, (vector-length item)]
-;; and represents the index of the dot in the production's item.
+;; An LR0-Prod is (lrprod Prod Nat Nat)
+;; where dotk is in [0, (vector-length (prod-item p))] --- inclusive! --- and
+;; skipmap represents the indexes of stack slots that should be skipped when
+;; building the list of values to the left of dotk.
 
-;; An LR0-Item is (cons Nat ElemSequence), where the nat is
-;; in [0, (vector-length item)], indicates the position of the dot.
+(struct lrprod (prod dotk skipmap) #:prefab)
 
-(define (prod->initial-lrprod p) (cons 0 p))
-(define (lrprod-prod lrp) (cdr lrp))
-
-(define (lrprod-dot-initial? lrp) (zero? (car lrp)))
+(define (prod->initial-lrprod p) (lrprod p 0 0))
+(define (lrprod-dot-initial? lrp) (zero? (lrprod-dotk lrp)))
 (define (lrprod-dot-not-initial? lrp) (not (lrprod-dot-initial? lrp)))
 (define (lrprod-dot-final? lrp)
-  (match lrp [(cons dotk (prod _ _ item _)) (= dotk (vector-length item))]))
+  (match lrp [(lrprod (prod _ _ item _) dotk _) (= dotk (vector-length item))]))
 
 (define (lrprod-elem-after-dot lrp)
-  (match lrp
-    [(cons dotk (prod _ _ item _))
-     (and (< dotk (vector-length item)) (vector-ref item dotk))]))
+  (match-define (lrprod (prod _ _ item _) dotk _) lrp)
+  (and (< dotk (vector-length item)) (vector-ref item dotk)))
 
 (define (lrprod-advance-dot lrp)
-  (match lrp [(cons dotk p) (cons (add1 dotk) p)]))
+  (match-define (lrprod p dotk skipmap) lrp)
+  (lrprod p (add1 dotk) (arithmetic-shift skipmap 1)))
+
+(define (lrprod-advance-skip lrp)
+  (match-define (lrprod p dotk skipmap) lrp)
+  (lrprod p (+ (arithmetic-shift skipmap 1) 1)))
 
 ;; A LR0-State is (Listof LR0-Prod)
 
@@ -57,7 +60,7 @@
           [else (map prod->label base-lrps)])))
 (define (prod->label lrp)
   (match lrp
-    [(cons dotk (prod nt index item _))
+    [(lrprod (prod nt index item _) dotk _)
      (list* nt index '→ (insert-dot dotk (map elem->label (vector->list item))))]))
 (define (elem->label elem)
   (match elem
@@ -70,6 +73,13 @@
 (define (insert-dot k xs)
   (cond [(zero? k) (cons DOT xs)]
         [else (cons (car xs) (insert-dot (sub1 k) (cdr xs)))]))
+
+;; else-elem : Element
+;; A top-elem with illegal terminal to encode "else" transitions.
+(define else-elem (top-elem '#:else))
+
+;; FIXME: This code assumes that top-elem never occurs first in
+;; production. Add check to syntax.rkt, grammar-rep.rkt?
 
 ;; ------------------------------------------------------------
 
@@ -113,17 +123,32 @@
     (define state0 (kernel->state (nt-lrprods start)))
     (define-syntax-rule (in-states) (in-indexer-values state-ix))
 
+    (define/private (state-make-next state) ;; State -> Hash[Elem => State]
+      (define groups ;; Hash[Elem => (Listof LR0-Prod)]
+        (for/fold ([h (hash)]) ([lrp (in-list state)])
+          (cond [(lrprod-elem-after-dot lrp)
+                 => (lambda (elem) (hash-cons h elem lrp))]
+                [else h])))
+      (cond [(and (for/or ([elem (in-hash-keys groups)]) (top-elem? elem))
+                  (for/or ([elem (in-hash-keys groups)]) (not (top-elem? elem))))
+             ;; Both top-elems and t/nt-elems; convert t/nt-first lrps
+             (define all-top-elems
+               (for/list ([elem (in-hash-keys groups)] #:when (top-elem? elem)) elem))
+             (define groups*
+               (for/fold ([h (hash)]) ([(elem lrp) (in-hash groups)])
+                 (cond [(top-elem? elem)
+                        (hash-cons h elem (lrprod-advance-dot lrp))]
+                       [else
+                        (for/fold ([h h]) ([elem (in-list (cons else-elem all-top-elems))])
+                          (hash-cons h elem (lrprod-advance-skip lrp)))])))
+             (for/hash ([(elem lrps) (in-hash groups*)])
+               (values elem (kernel->state lrps)))]
+            [else
+             (for/hash ([(elem lrps) (in-hash groups)])
+               (values elem (kernel->state (map lrprod-advance-dot (reverse lrps)))))]))
+
     (define state-edge-h ;; Hash[State => Hash[Elem => State]]
-      (closure (list state0)
-               (lambda (state)
-                 (define groups ;; Hash[Elem => (Listof LR0-Prod)]
-                   (for/fold ([h (hash)]) ([lrp (in-list state)])
-                     (cond [(lrprod-elem-after-dot lrp)
-                            => (lambda (elem) (hash-cons h elem lrp))]
-                           [else h])))
-                 (for/hash ([(elem lrps) (in-hash groups)])
-                   (values elem (kernel->state (map lrprod-advance-dot (reverse lrps))))))
-               #:worklist hash-values))
+      (closure (list state0) (lambda (state) (state-make-next state)) #:worklist hash-values))
     (define/public (state-edges state) (hash-ref state-edge-h state))
     (define/public (state-edge state sym) (hash-ref (state-edges state) sym #f))
 
