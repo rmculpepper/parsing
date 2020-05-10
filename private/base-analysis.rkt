@@ -84,7 +84,7 @@
       (match elem
         [(ntelem nt) (nt-minlen nt #:h h)]
         [(telem t tr) 1]
-        [(top-elem _ _) 0]))
+        [(top-elem _) 0]))
     (define/public (item-minlen item #:h [h nt-minlen-h])
       (for/sum ([elem (in-vector item)]) (elem-minlen elem #:h h)))
 

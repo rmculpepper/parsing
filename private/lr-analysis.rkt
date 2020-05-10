@@ -26,30 +26,23 @@
 (define DOT (string->uninterned-symbol "•"))
 ;;(define DOT (string->uninterned-symbol "◇"))
 
-;; An LR0-Prod is (lrprod Prod Nat Nat)
-;; where dotk is in [0, (vector-length (prod-item p))] --- inclusive! --- and
-;; skipmap represents the indexes of stack slots that should be skipped when
-;; building the list of values to the left of dotk.
+;; An LR0-Prod is (lrprod Prod Nat)
+;; where dotk is in [0, (vector-length (prod-item p))] --- inclusive!.
 
-(struct lrprod (prod dotk skipmap) #:prefab)
+(struct lrprod (prod dotk) #:prefab)
 
-(define (prod->initial-lrprod p) (lrprod p 0 0))
+(define (prod->initial-lrprod p) (lrprod p 0))
 (define (lrprod-dot-initial? lrp) (zero? (lrprod-dotk lrp)))
 (define (lrprod-dot-not-initial? lrp) (not (lrprod-dot-initial? lrp)))
 (define (lrprod-dot-final? lrp)
-  (match lrp [(lrprod (prod _ _ item _) dotk _) (= dotk (vector-length item))]))
+  (match lrp [(lrprod (prod _ _ item _) dotk) (= dotk (vector-length item))]))
 
 (define (lrprod-elem-after-dot lrp)
-  (match-define (lrprod (prod _ _ item _) dotk _) lrp)
+  (match-define (lrprod (prod _ _ item _) dotk) lrp)
   (and (< dotk (vector-length item)) (vector-ref item dotk)))
 
 (define (lrprod-advance-dot lrp)
-  (match-define (lrprod p dotk skipmap) lrp)
-  (lrprod p (add1 dotk) (arithmetic-shift skipmap 1)))
-
-(define (lrprod-advance-skip lrp)
-  (match-define (lrprod p dotk skipmap) lrp)
-  (lrprod p (+ (arithmetic-shift skipmap 1) 1)))
+  (match lrp [(lrprod p dotk) (lrprod p (add1 dotk))]))
 
 ;; A LR0-State is (Listof LR0-Prod)
 
@@ -60,7 +53,7 @@
           [else (map prod->label base-lrps)])))
 (define (prod->label lrp)
   (match lrp
-    [(lrprod (prod nt index item _) dotk _)
+    [(lrprod (prod nt index item _) dotk)
      (list* nt index '→ (insert-dot dotk (map elem->label (vector->list item))))]))
 (define (elem->label elem)
   (match elem
@@ -69,7 +62,7 @@
     [(telem t #f) t]
     [(telem t (? symbol? tr)) (list t tr)]
     [(telem t tr) (list t tr)]
-    [(pure-elem t ue) (list* t '#:pure ue)]))
+    [(top-elem t) (list* t '#:top)]))
 (define (insert-dot k xs)
   (cond [(zero? k) (cons DOT xs)]
         [else (cons (car xs) (insert-dot (sub1 k) (cdr xs)))]))
@@ -78,8 +71,14 @@
 ;; A top-elem with illegal terminal to encode "else" transitions.
 (define else-elem (top-elem '#:else))
 
-;; FIXME: This code assumes that top-elem never occurs first in
-;; production. Add check to syntax.rkt, grammar-rep.rkt?
+;; FIXME: This code assumes that top-elem never occurs first in production. Add
+;; check to syntax.rkt, grammar-rep.rkt?
+
+;; FIXME: This code assumes that top-elem does not cause push, is not counted in
+;; action routine's arity (or TR's argument indexes).
+
+(define (item->arity elems)
+  (for/sum ([elem (in-vector elems)]) (if (top-elem? elem) 0 1)))
 
 ;; ------------------------------------------------------------
 
@@ -140,7 +139,7 @@
                         (hash-cons h elem (lrprod-advance-dot lrp))]
                        [else
                         (for/fold ([h h]) ([elem (in-list (cons else-elem all-top-elems))])
-                          (hash-cons h elem (lrprod-advance-skip lrp)))])))
+                          (hash-cons h elem lrp))])))
              (for/hash ([(elem lrps) (in-hash groups*)])
                (values elem (kernel->state lrps)))]
             [else
@@ -152,38 +151,47 @@
     (define/public (state-edges state) (hash-ref state-edge-h state))
     (define/public (state-edge state sym) (hash-ref (state-edges state) sym #f))
 
-    (define state-pred-h ;; Hash[State => Hash[Elem => (Listof State)]]
-      (for/fold ([h (hash)]) ([st1 (in-states)])
-        (for/fold ([h h]) ([(elem st2) (in-hash (state-edges st1))])
-          (hash-update h st2 (lambda (h*) (hash-cons h* elem st1)) (hash)))))
-    (define/public (state-all-preds st)
-      (apply append (hash-values (hash-ref state-pred-h st))))
-
     ;; state-reduce-origin : State Reduction -> (Listof State)
     (define/public (state-reduce-origin st red)
       ;; Given state and reduction (from a final LR0-Item), returns the states
       ;; that reducing with that rule might *return* to (not the subsequent goto
-      ;; state). Note: if a state contains a reduction whose item has N
-      ;; elements, then all predecessor chains must have length at least N, and
-      ;; each of the pred^N states originates the given production.
-      (for/fold ([sts (list st)]) ([n (in-range (reduction-arity red))])
-        (apply set-union null (for/list ([st (in-list sts)]) (state-all-preds st)))))
+      ;; state). Note: In the absence of top-elems, if a state contains a
+      ;; reduction whose item has N elements, then all predecessor chains must
+      ;; have length at least N, and each of the pred^N states originates the
+      ;; given production. For top-elems, we distinguish between 0-predecessors
+      ;; and 1-predecessors.
+      (define (get-0-preds st) (hash-ref (hash-ref state-pred-h st '#hash()) 0 null))
+      (define (get-1-preds st) (hash-ref (hash-ref state-pred-h st '#hash()) 1 null))
+      (define (loop sts n) ;; (Listof State) Nat -> (Listof State)
+        (cond [(zero? n)
+               (list-closure sts get-0-preds)]
+              [else
+               (define sts* (list-closure sts get-0-preds))
+               (loop (apply set-union null (map get-1-preds sts*)) (sub1 n))]))
+      (loop (list st) (reduction-arity red)))
+
+    (define state-pred-h ;; Hash[State => Hash[(U 0 1) => (Listof State)]]
+      (for/fold ([h (hash)]) ([st1 (in-states)])
+        (for/fold ([h h]) ([(elem st2) (in-hash (state-edges st1))])
+          (hash-update h st2 (lambda (h*) (hash-cons h* (if (top-elem? elem) 0 1) st1)) (hash)))))
 
     ;; ========================================
 
     (define/private (state->pstate st index get-lookahead)
       (define label (lr-state-label st))
+      (define shift-for-top?
+        (for/or ([elem (in-hash-keys (state-edges st))]) (top-elem? elem)))
       (define shift (for/hash ([(elem st) (in-hash (state-edges st))]
-                               #:when (p/t-elem? elem))
-                      (values (p/t-elem-t elem) (state-index st))))
+                               #:when (t/top-elem? elem))
+                      (values (t/top-elem-t elem) (state-index st))))
       (define goto (for/hash ([(elem st) (in-hash (state-edges st))]
                               #:when (ntelem? elem))
                      (values (ntelem-nt elem) (state-index st))))
       ;; FIXME: intern shift, goto?
       (define reduce
         (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))
-          (match-define (cons _ (prod nt index item action)) lrp)
-          (reduction nt index (vector-length item) (nt-ctxn nt) action)))
+          (match-define (lrprod (prod nt index item action) _) lrp)
+          (reduction nt index (item->arity item) (nt-ctxn nt) action)))
       (define accept
         (cond [(equal? (map reduction-nt reduce) (list start)) 'true]
               [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
@@ -194,9 +202,13 @@
       ;; reduction(s).
       (define (consistent-tr elems) (elems-consistent-tr 'lr-parser elems))
       (define-values (tr lookahead/e)
-        (cond [(null? reduce)
+        (cond [shift-for-top?
+               ;; => No reductions
+               (define tr '#:top)
+               (values tr #f)]
+              [(null? reduce)
                ;; No reductions => no lookahead needed
-               (define tr (consistent-tr (filter p/t-elem? (hash-keys (state-edges st)))))
+               (define tr (consistent-tr (filter telem? (hash-keys (state-edges st)))))
                (values tr #f)]
               [(and (hash-empty? shift) (<= (length reduce) 1))
                ;; No shift, at most one reduction => no lookahead needed
@@ -206,7 +218,7 @@
                (define lookahead/e (get-lookahead st reduce))
                (define tr
                  (consistent-tr
-                  (append (filter p/t-elem? (hash-keys (state-edges st)))
+                  (append (filter telem? (hash-keys (state-edges st)))
                           (hash-keys lookahead/e))))
                (unless (simple-tr? tr)
                  (error 'lr-parser
@@ -218,7 +230,7 @@
         (and lookahead/e
              (not (eq? lookahead-mode 'lr0))
              (for/hash ([(elem red) (in-hash lookahead/e)])
-               (values (p/t-elem-t elem) red))))
+               (values (telem-t elem) red))))
       (pstate index label tr shift reduce goto accept lookahead))
 
     ;; ----------------------------------------
@@ -261,7 +273,7 @@
           (values next-st (cons elem* acc))))
       (define ndef-h ;; FIXME: use lists, group-by instead of hash
         (for*/fold ([h (hash)]) ([st (in-states)] [lrp (in-list st)] #:when (lrprod-dot-initial? lrp))
-          (match-define (cons 0 (prod nt index item action)) lrp)
+          (match-define (lrprod (prod nt index item action) 0) lrp)
           (define nnt (mknnt st nt))
           (hash-cons h nnt (prod nnt index (get-nitem st item) 'unused-action))))
       (grammar (mknnt state0 start)

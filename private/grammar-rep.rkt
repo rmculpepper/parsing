@@ -61,6 +61,9 @@
 (struct telem (t tr) #:prefab)
 (struct top-elem (t) #:prefab)
 
+(define (t/top-elem? x) (or (telem? x) (top-elem? x)))
+(define (t/top-elem-t x) (match x [(telem t _) t] [(top-elem t) t]))
+
 ;; ValuesDesc = (Vectorof Syntax[Expr])   -- at compile time
 ;; ValuesDesc = (Vectorof Value)          -- at run time
 

@@ -113,10 +113,10 @@
                             ;; FIXME: add tf and arity to list to check at runtime?
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
                             (telem ($ t.ast) (cons ($ tf.ast) (($ args.mkast) venv)))))
-    (pattern (~seq t:token-name #:pure e:user-expr)
+    (pattern (~seq t:token-name #:top)
              #:attr mkast (lambda (nt? venv)
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
-                            (pure-elem ($ t.ast) (($ e.mkast) venv))))
+                            (top-elem ($ t.ast))))
     (pattern (~seq :t/nt)))
 
   (define-syntax-class user-expr #:attributes (mkast)
