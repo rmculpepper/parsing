@@ -36,7 +36,9 @@
          (list-ref stack (+ index index 1))])))
 
   (define (loop stack)
-    (define st (car stack))
+    (loop* (car stack) stack))
+  (define (loop* st stack)
+    ;; st is usually (car stack), except when forwarded by #:top
     (dprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st))
     (cond [(pstate-accept st)
            => (lambda (accept)
@@ -49,11 +51,11 @@
                 (define next-tok (get-token #t (pstate-tr st) stack))
                 (cond [(hash-ref lookahead (token-name next-tok) #f)
                        => (lambda (reds) (reduce stack (car reds)))]
-                      [else (shift stack)]))]
+                      [else (shift st stack)]))]
           ;; ??? reduce vs shift priority?
           [(pair? (pstate-reduce st))
            (reduce stack (car (pstate-reduce st)))]
-          [else (shift stack)]))
+          [else (shift st stack)]))
 
   (define (reduce stack red)
     (match-define (reduction nt index arity ctxn action) red)
@@ -66,9 +68,22 @@
            (dprintf "REDUCE: ~v\n" nt value)
            (goto value stack*)]))
 
-  (define (shift stack)
-    (define st (car stack))
-    (define next-tok (get-token #f (pstate-tr st) stack))
+  (define (shift st stack)
+    (match (pstate-tr st)
+      ['#:top (do-top st stack)]
+      [tr (shift* st (get-token #f tr stack) stack)]))
+
+  (define (do-top st stack)
+    (define last-tok-value (token-value* (cadr stack) '#:else))
+    (define shift-h (pstate-shift st))
+    (cond [(or (hash-ref shift-h last-tok-value #f)
+               (hash-ref shift-h '#:else #f))
+           => (lambda (next-state)
+                (dprintf "TOP ~v, #~s\n" last-tok-value next-state)
+                (loop* (get-state next-state) #f stack))]
+          [else (fail 'top stack #f)]))
+
+  (define (shift* st next-tok stack)
     (cond [(hash-ref (pstate-shift st) (token-name next-tok) #f)
            => (lambda (next-state)
                 (dprintf "SHIFT ~v, #~s\n" next-tok next-state)
