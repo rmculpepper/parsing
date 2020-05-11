@@ -103,13 +103,18 @@
 (eprintf "\nExample d4:\n")
 (define-grammar d4
   #:start S
-  [S [([c letter #:read char] [w code #:pure (token 'code (char->integer c))])
-      #:> (list c w)]])
-(define l4 (ll1-parser #:grammar d4))
-(when PRINT? (send l4 print))
+  [S [([c letter #:read char] [e E] [65 #:top]) #:> (list "got A" c e)]
+     [([c letter #:read char] [e E] [66 #:top]) #:> (list "got B" c e)]]
+  [E #:context [p]
+     [() (char->integer p)]])
+(define gd4 (lr-parser #:grammar d4))
+(when PRINT? (send gd4 print))
 
-(send l4 parse (d3-tokenizer "A"))
+(send gd4 parse (d3-tokenizer "A"))
+(send gd4 parse* (d3-tokenizer "A"))
 
+(send gd4 parse (d3-tokenizer "B"))
+(send gd4 parse* (d3-tokenizer "B"))
 
 ;; ----------------------------------------
 

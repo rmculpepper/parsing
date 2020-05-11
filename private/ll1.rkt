@@ -69,43 +69,35 @@
          (list-ref stack index)])))
   (define (get-val k) (vector-ref vals k))
 
-  (define (loop-nt nt)
+  (define (loop-nt nt stack)
     (match (hash-ref table nt)
       [(list* tr ctxn dispatch)
        (define next-tok (get-token #t tr null))
        (cond [(hash-ref dispatch (token-name next-tok) #f)
-              => (lambda (ps) (loop-prod (car ps) ctxn))]
+              => (lambda (ps) (loop-prod (car ps) ctxn stack))]
              [else (error 'll1-parse "NT = ~v, next = ~v" nt next-tok)])]))
 
-  (define (loop-elem e lstack)
+  (define (loop-elem e stack)
     (match e
       [(ntelem nt)
-       (cons (token nt (loop-nt nt)) lstack)]
+       (cons (token nt (loop-nt nt stack)) stack)]
       [(telem t tr)
-       (define next-tok (get-token #f tr lstack))
+       (define next-tok (get-token #f tr stack))
        (if (eqv? t (token-name next-tok))
-           (cons next-tok lstack)
+           (cons next-tok stack)
            (error 'll1-parse "expected ~v, next = ~v" t next-tok))]
       [(top-elem t)
-       (if (eqv? t (token-value (car lstack)))
-           lstack
-           (error 'll1-parse "expected ~v, top = ~v" t (car lstack)))]))
+       (if (eqv? t (token-value (car stack)))
+           stack
+           (error 'll1-parse "expected ~v, top = ~v" t (car stack)))]))
 
-  (define (loop-prod p ctxn)
+  (define (loop-prod p ctxn stack)
     (match-define (prod nt index item action) p)
-    (unless (zero? ctxn) (error 'll1-parse "parameters not implemented"))
-    (apply-action action
-                  (for/fold ([lstack null]) ([e (in-vector item)])
-                    (loop-elem e lstack))))
+    (define stack* (for/fold ([stack stack]) ([e (in-vector item)]) (loop-elem e stack)))
+    (apply (get-val action) (get-args (vector-length item) ctxn stack*)))
 
-  (define (apply-action action lstack)
-    (apply (get-val action) (reverse lstack)))
+  (define (get-args popn peekn stack)
+    (for/fold ([acc null]) ([v (in-list stack)] [_i (in-range (+ popn peekn))])
+      (cons v acc)))
 
-  (loop-nt start))
-
-;; FIXME: don't need to store (token NT/T Value) on stack, just Value,
-;; *except* for detecting tokens without payloads in action routines.
-
-(define (apply->token f args)
-  (define v (apply f args))
-  (list (if (ok-terminal? v) v 'bad-token-name)))
+  (loop-nt start null))

@@ -159,7 +159,7 @@
                         (set-union (nt-first nt)
                                    (if (nt-nullable? nt) follows-this null)))]
                [(? telem?) (values h (list elem))]
-               [(? top-elem?) h follows-this]))))
+               [(? top-elem?) (values h follows-this)]))))
        (hash start (list (telem EOF #f)))))
 
     ;; *-follow : ... -> (Listof telem)

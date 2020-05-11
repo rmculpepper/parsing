@@ -92,7 +92,7 @@
 
 ;; Unlike lr-parse, glr-parse pushes a special "no-value" on top-elem.
 ;; Must filter out on peek/pop.
-(define (no-value) (void))
+(define no-value (void))
 (define (no-value? x) (void? x))
 
 ;; ----------------------------------------
@@ -144,7 +144,7 @@
              (cond [(or (hash-ref (pstate-shift st) (token-value* v1 '#:else) #f)
                         (hash-ref (pstate-shift st) '#:else #f))
                     => (lambda (next-state)
-                         (run-until-look (list* (get-state next-state) no-value st v1 sk**)))]
+                         (run-until-look (list* (get-state next-state) no-value st v1 sk**) next-tok))]
                    [else (push! failed (list* v1 st vsk*))]))]
           [else
            (for ([red (pstate-reduce st)] [i (in-naturals)])

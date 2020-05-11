@@ -228,8 +228,8 @@
   #:start S
   [S [(P A) $2]]
   [P [() (list 1 2)]]
-  [A #:parameters (x y)
-     [(a) (list x y $1)]])
+  [A #:context [xy]
+     [(a) (list xy $1)]])
 
 (define gp1 (lr-parser #:grammar p1))
 (define ss1a '((a)))

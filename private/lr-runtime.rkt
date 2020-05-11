@@ -80,7 +80,7 @@
                (hash-ref shift-h '#:else #f))
            => (lambda (next-state)
                 (dprintf "TOP ~v, #~s\n" last-tok-value next-state)
-                (loop* (get-state next-state) #f stack))]
+                (loop* (get-state next-state) stack))]
           [else (fail 'top stack #f)]))
 
   (define (shift* st next-tok stack)

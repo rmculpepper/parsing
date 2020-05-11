@@ -13,7 +13,7 @@
 ;; In grammar specification, an Element is one of
 ;; - [name NT]
 ;; - [name T #:read (TR Expr ...)]
-;; - [name T #:pure Expr)]
+;; - [T #:top)]
 
 ;; In addition, the following abbreviated Elements are allowed:
 ;; - NT                         -- short for [_ NT]
@@ -21,13 +21,12 @@
 ;; - [name T]                   -- short for [name T #:read default]
 ;; - [name T #:read TR]         -- short for [name T #:read (TR)]
 ;; - [T #:read (TR Expr ...)]   -- short for [_ T #:read (TR Expr ...)]
-;; - [T #:pure Expr]            -- short for [_ name T #:pure Expr]
 
 (begin-for-syntax
   (define value-table (make-parameter #f)) ;; Indexer[Syntax]
   (define (add-value! stx) (indexer-add! (value-table) stx))
 
-  (define params-spec (make-parameter #f)) ;; #f or (listof Identifier)
+  (define params-spec (make-parameter null)) ;; (Listof Identifier)
 
   (define (map-apply fs . xs) (for/list ([f (in-list fs)]) (apply f xs)))
   (define (mk-$n n) (format-id (current-syntax-context) "$~a" n))
@@ -36,17 +35,17 @@
     #:description "nonterminal definition"
     (pattern [nt:symbol ps:params-clause rhs:ntrhs ...]
              #:attr mkast (lambda (nt?)
-                            (def ($ nt.ast) (if ($ ps.spec) 1 0)
+                            (def ($ nt.ast) (length ($ ps.spec))
                               (parameterize ((params-spec ($ ps.spec)))
                                 (for/list ([rhs-mkast (in-list ($ rhs.mkast))] [index (in-naturals)])
                                   (rhs-mkast ($ nt.ast) index nt?)))))))
 
   (define-splicing-syntax-class params-clause #:attributes (spec)
-    #:description "parameters clause"
-    (pattern (~seq #:parameters (param:id ...))
+    #:description "context clause"
+    (pattern (~seq #:context (param:id ...))
              #:attr spec (syntax->list #'(param ...)))
     (pattern (~seq)
-             #:attr spec #f))
+             #:attr spec null))
 
   (define-syntax-class ntrhs #:attributes (mkast)
     (pattern [es:elemseq a:action]
@@ -75,14 +74,20 @@
                                       ([e-mkast (in-list ($ e.mkast))]
                                        [var (in-list ($ e.name))]
                                        [index (in-naturals 1)])
-                              (values (cons (e-mkast nt? venv) acc)
-                                      (cons (or var (mk-$n index)) venv))))))
+                              (define elem (e-mkast nt? venv))
+                              (values (cons elem acc)
+                                      (cond [(top-elem? elem) venv]
+                                            [else (cons (or var (mk-$n index)) venv)]))))))
 
   (define-syntax-class elem #:attributes (name mkast)
     #:description #f
     (pattern :t/nt #:attr name #f)
     (pattern [:name :elem-content])
-    (pattern [:elem-content] #:attr name #f))
+    (pattern [:elem-content] #:attr name #f)
+    (pattern [t:token-name #:top] #:attr name #f
+             #:attr mkast (lambda (nt? venv)
+                            (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
+                            (top-elem ($ t.ast)))))
 
   (define-syntax-class name #:attributes (name)
     #:literals (_)
@@ -113,10 +118,6 @@
                             ;; FIXME: add tf and arity to list to check at runtime?
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
                             (telem ($ t.ast) (cons ($ tf.ast) (($ args.mkast) venv)))))
-    (pattern (~seq t:token-name #:top)
-             #:attr mkast (lambda (nt? venv)
-                            (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
-                            (top-elem ($ t.ast))))
     (pattern (~seq :t/nt)))
 
   (define-syntax-class user-expr #:attributes (mkast)
@@ -179,11 +180,11 @@
     (define rvenv (reverse venv)) ;; arguments are first-bound to last-bound
     (define tok-vars (generate-temporaries rvenv))
     (define-values (param-vars param-bindings)
-      (cond [(params-spec)
-             => (lambda (params)
-                  (values (list #'nt-parameters)
-                          (list #`[#,params (apply values (token-value nt-parameters))])))]
-            [else (values null null)]))
+      (let ([param-vars (generate-temporaries (params-spec))])
+        (values param-vars
+                (for/list ([param-var (in-list param-vars)]
+                           [param (in-list (params-spec))])
+                  #`[#,param (token-variable (quote-syntax #,param) (quote-syntax #,param-var))]))))
     (define tok-bindings
       (for/list ([tvar (in-list tok-vars)] [vvar (in-list rvenv)] #:when (identifier? vvar))
         #`[#,vvar (token-variable (quote-syntax #,vvar) (quote-syntax #,tvar))]))
@@ -193,7 +194,7 @@
                   [(param-binding ...) param-bindings]
                   [expr expr])
       #'(lambda (param-var ... tok-var ...)
-          (let-values (param-binding ...) (letrec-syntax (tok-binding ...) expr)))))
+          (letrec-syntax (param-binding ... tok-binding ...) expr))))
 
   (define (parse-grammar start defs #:context ctx)
     (syntax-parse (cons start defs)
