@@ -75,3 +75,11 @@
 ;; - (conflict:s/r Nat Terminal/#f)
 (struct conflict:s/r (st t) #:prefab)
 (struct conflict:r/r (st t) #:prefab)
+
+;; ============================================================
+;; Error reporting
+
+(struct pretty-state (index label) #:prefab #:reflection-name 'state)
+
+(define (convert-pretty-states v)
+  (if (pstate? v) (pretty-state (pstate-index v) (pstate-label v)) v))

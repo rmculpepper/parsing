@@ -95,12 +95,13 @@
 (define no-value (void))
 (define (no-value? x) (void? x))
 
+(define-syntax-rule (push! var value) (set! var (cons value var)))
+
 ;; ----------------------------------------
 
 (define (glr-parse states vals tz #:mode [mode 'complete])
   (define DEBUG? #f)
-  (define KEEP-FAIL? #f)
-  (define-syntax-rule (push! var value) (set! var (cons value var)))
+  (define KEEP-FAIL? #t)
   (define-syntax-rule (dprintf fmt arg ...) (when DEBUG? (eprintf fmt arg ...)))
   (define (get-state n) (vector-ref states n))
   (define (get-val n) (vector-ref vals n))
@@ -213,5 +214,31 @@
   (dprintf "\n==== START STEPPING ====\n")
   (let loop ()
     (cond [(and (memq mode '(first-done)) (pair? done)) done]
-          [(null? ready) done]
+          [(null? ready) (if (pair? done) done (parse-error 'glr-parser (glr-context failed)))]
           [else (run-all-ready) (loop)])))
+
+;; ----------------------------------------
+
+(struct glr-context (vsks)
+  #:transparent
+  #:methods gen:context
+  [(define (context->stack self)
+     (match (context->stacks self)
+       [(list s) s] [_ (error 'context->stacks "multiple stacks")]))
+   (define (context->stacks self)
+     (define rstacks null)
+     (define (loop tsk acc)
+       (if (null? tsk)
+           (push! rstacks (reverse acc))
+           (with-tstack tsk [v tsk*]
+             (loop tsk* (cons (convert-pretty-states v) acc)))))
+     (for ([vsk (in-list (reverse (glr-context-vsks self)))])
+       (loop vsk null))
+     (reverse rstacks))
+   (define (context->expected-terminals self)
+     (define h (make-hash))
+     (define (loop vsk)
+       (with-tstack vsk [v1 s2 _]
+         (for ([t (in-hash-keys (pstate-shift s2))]) (hash-set! h t #t))))
+     (map loop (glr-context-vsks self))
+     (hash-keys h))])

@@ -80,7 +80,7 @@
            => (lambda (next-state)
                 (dprintf "TOP ~v, #~s\n" last-tok-value next-state)
                 (loop* (get-state next-state) stack))]
-          [else (fail 'top stack #f)]))
+          [else (fail 'top stack (token last-tok-value))]))
 
   (define (shift* st next-tok stack)
     (cond [(hash-ref (pstate-shift st) (token-name next-tok) #f)
@@ -101,7 +101,7 @@
     (loop (list* (get-state next-state) reduced stack)))
 
   (define (fail how stack next-tok)
-    (error 'lr-parse "~s ~v, state = ~v" how next-tok (car stack)))
+    (parse-error 'lr-parser (lr-context how (cons next-tok stack))))
 
   (loop (list (get-state 0))))
 
@@ -115,3 +115,17 @@
 (define (peek-values n xs acc)
   (let loop ([n n] [xs xs] [acc acc])
     (if (zero? n) acc (loop (sub1 n) (cddr xs) (cons (cadr xs) acc)))))
+
+;; ----------------------------------------
+
+(struct lr-context (op vsk)
+  #:methods gen:context
+  [(define (context->stack self)
+     (define (convert v)
+       (if (pstate? v) (pretty-state (pstate-index v) (pstate-label v)) v))
+     (map convert (lr-context-vsk self)))
+   (define (context->stacks self)
+     (list (context->stack self)))
+   (define (context->expected-terminals self)
+     (match-define (lr-context _ (list* v1 s2 _)) self)
+     (hash-keys (pstate-shift s2)))])

@@ -214,7 +214,7 @@
 (send gg10 parse* (mktz s10a))
 
 (send lg10 parse (mktz s10b))
-(send gg10 parse* (mktz s10b))
+;;(send gg10 parse* (mktz s10b))
 
 (send lg10 parse (mktz s10c))
 (send gg10 parse* (mktz s10c))

@@ -1,5 +1,6 @@
 #lang racket/base
 (require racket/match
+         racket/generic
          (submod "grammar-rep.rkt" common)
          "token.rkt")
 (provide (all-defined-out)
@@ -94,3 +95,24 @@
 ;; Disambiguation filters
 
 (struct filter:reject () #:prefab)
+
+;; ============================================================
+;; Error reporting
+
+(struct exn:fail:parse exn:fail (context)
+  #:property prop:exn:srclocs
+  (lambda (self) (context->srclocs (exn:fail:parse-context self))))
+
+(define (parse-error who context)
+  (let/ec here
+    (raise (exn:fail:parse (format "~s: parse error" who)
+                           (continuation-marks here)
+                           context))))
+
+(define-generics context
+  (context->stack context) ;; Context -> (Listof (U Token PrettyState))
+  (context->stacks context) ;; Context -> (Listof (Listof (U Token PrettyState)))
+  (context->expected-terminals context) ;; Context -> (U #f (Listof Terminal))
+  (context->srclocs context) ;; Context -> (Listof srcloc)
+  #:fallbacks
+  [(define (context->srclocs self) null)])
