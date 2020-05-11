@@ -100,31 +100,3 @@
     [groups
      (define kinds (map telem-tr (map car groups)))
      (error who "inconsistent token readers\n  readers: ~v" kinds)]))
-
-
-;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-;;
-;;   OLD
-;;
-;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-;;
-;; A TokenReader (during table construction) is one of
-;; - (cons Symbol (Listof TExpr))
-;; - (cons '#:apply Symbol Nat (Listof TExpr)) -- Nat is index into value table
-;; where TExpr = Nat | (list Datum) -- a stack index or a literal value.
-;;
-;; Some design rationale: We want a way of sneaking a value into Token
-;; position, to allow eg
-;;
-;;   Msg ::= f:Flag (if (has-X-bit? f) then X else ε) Y
-;;
-;; But we need to avoid (or limit) the question of expression
-;; equality, or else go from a "set of sequence" view of productions
-;; to an "expression" view. So we don't allow arbitrary expressions;
-;; instead, we require registration of functions and recognize them by
-;; symbol name, and we limit arguments to element variables and quoted
-;; constants. So for example:
-;;
-;;   token function (has-X-bit? _)
-;;   Msg -> [f Flag] [true  : (has-X-bit? f)] X Y
-;;   Msg -> [f Flag] [false : (has-X-bit? f)] Y

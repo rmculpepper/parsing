@@ -94,14 +94,14 @@
   (define (loop-prod p ctxn stack)
     (match-define (prod nt index item action) p)
     (define stack* (for/fold ([stack stack]) ([e (in-vector item)]) (loop-elem e stack)))
-    (apply-action nt action (vector-length item) ctxn stack*))
-
-  (define (apply-action nt action popn peekn stack)
-    (define-values (args stack*) (rev-take popn stack null))
-    (define-values (all-args _s) (rev-take peekn stack* args))
-    (make-nt-token nt (apply (get-val action) all-args) args))
+    (apply-action nt (get-val action) (vector-length item) ctxn stack*))
 
   (loop-nt start null))
+
+(define (apply-action nt action-fun popn peekn stack)
+  (define-values (args stack*) (rev-take popn stack null))
+  (define-values (all-args _s) (rev-take peekn stack* args))
+  (make-nt-token nt (apply action-fun all-args) args))
 
 (define (rev-take n xs acc)
   (let loop ([n n] [xs xs] [acc acc])

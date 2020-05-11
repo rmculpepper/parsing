@@ -87,6 +87,9 @@
     (pattern [t:token-name #:top] #:attr name #f
              #:attr mkast (lambda (nt? venv)
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
+                            (unless (pair? venv)
+                              (wrong-syntax this-syntax
+                                            "production cannot start with #:top element"))
                             (top-elem ($ t.ast)))))
 
   (define-syntax-class name #:attributes (name)
@@ -127,18 +130,6 @@
                             (define-values (fun refs)
                               (expand/make-user-expr #'e venv))
                             (expr:user (add-value! fun) refs))))
-
-  #;
-  (define-syntax-class texpr #:attributes (mkast)
-    #:description "token-function argument"
-    #:literals (quote)
-    (pattern var:id
-             #:attr mkast (lambda (venv)
-                            (or (for/or ([id (in-list venv)] [index (in-naturals 1)])
-                                  (and id (bound-identifier=? #'var id) index))
-                                (wrong-syntax #'var "unbound element variable"))))
-    (pattern (quote datum)
-             #:attr mkast (lambda (venv) (list (syntax->datum #'datum)))))
 
   (define-syntax-class symbol #:attributes (ast)
     (pattern x:id #:attr ast (syntax-e #'x)))
