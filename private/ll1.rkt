@@ -75,7 +75,7 @@
        (define next-tok (get-token #t tr null))
        (cond [(hash-ref dispatch (token-name next-tok) #f)
               => (lambda (ps) (loop-prod (car ps) ctxn stack))]
-             [else (error 'll1-parse "NT = ~v, next = ~v" nt next-tok)])]))
+             [else (fail `(nt ,nt ,(hash-keys dispatch)) (cons next-tok stack))])]))
 
   (define (loop-elem e stack)
     (match e
@@ -85,16 +85,18 @@
        (define next-tok (get-token #f tr stack))
        (if (eqv? t (token-name next-tok))
            (cons next-tok stack)
-           (error 'll1-parse "expected ~v, next = ~v" t next-tok))]
+           (fail `(terminal ,t) (cons next-tok stack)))]
       [(top-elem t)
        (if (eqv? t (token-value (car stack)))
            stack
-           (error 'll1-parse "expected ~v, top = ~v" t (car stack)))]))
+           (fail `(top ,t) stack))]))
 
   (define (loop-prod p ctxn stack)
     (match-define (prod nt index item action) p)
     (define stack* (for/fold ([stack stack]) ([e (in-vector item)]) (loop-elem e stack)))
     (apply-action nt (get-val action) (vector-length item) ctxn stack*))
+
+  (define (fail how stack) (parse-error 'll1-parser (ll1-context how stack)))
 
   (loop-nt start null))
 
@@ -107,3 +109,17 @@
   (let loop ([n n] [xs xs] [acc acc])
     (cond [(zero? n) (values acc xs)]
           [else (loop (sub1 n) (cdr xs) (cons (car xs) acc))])))
+
+;; ----------------------------------------
+
+(struct ll1-context (op stack)
+  #:methods gen:context
+  [(define (context->stack self)
+     (ll1-context-stack self))
+   (define (context->stacks self)
+     (list (context->stack self)))
+   (define (context->expected-terminals self)
+     (match (ll1-context-op self)
+       [(list 'nt nt ts) ts]
+       [(list 't t) (list t)]
+       [(list 'top t) #f]))])

@@ -127,5 +127,5 @@
    (define (context->stacks self)
      (list (context->stack self)))
    (define (context->expected-terminals self)
-     (match-define (lr-context _ (list* v1 s2 _)) self)
-     (hash-keys (pstate-shift s2)))])
+     (match-define (lr-context op (list* v1 s2 _)) self)
+     (if (eq? op 'top) #f (hash-keys (pstate-shift s2))))])

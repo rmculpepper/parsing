@@ -112,7 +112,7 @@
       [(? symbol? tk) (tz #f tk null)]
       [_ (error 'glr-parse "unsupported token reader: ~e" tr)]))
 
-  (define failed null) ;; mutated; (Listof VStack)
+  (define failed null) ;; mutated; (Listof (U VStack (box VStack))) -- box means #:top failed
   (define ready null) ;; mutated; (Listof StStack); ready to look at next token
   (define done null) ;; mutated; (Listof Result)
 
@@ -146,7 +146,7 @@
                         (hash-ref (pstate-shift st) '#:else #f))
                     => (lambda (next-state)
                          (run-until-look (list* (get-state next-state) no-value st v1 sk**) next-tok))]
-                   [else (push! failed (list* v1 st vsk*))]))]
+                   [else (push! failed (box (list* v1 st vsk*)))]))]
           [else
            (for ([red (pstate-reduce st)] [i (in-naturals)])
              (dprintf "-- R2L #~s reduction ~s/~s\n"
@@ -226,19 +226,20 @@
      (match (context->stacks self)
        [(list s) s] [_ (error 'context->stacks "multiple stacks")]))
    (define (context->stacks self)
-     (define rstacks null)
+     (define stacks null)
      (define (loop tsk acc)
        (if (null? tsk)
-           (push! rstacks (reverse acc))
+           (push! stacks (reverse acc))
            (with-tstack tsk [v tsk*]
              (loop tsk* (cons (convert-pretty-states v) acc)))))
-     (for ([vsk (in-list (reverse (glr-context-vsks self)))])
-       (loop vsk null))
-     (reverse rstacks))
+     (for ([vsk (in-list (glr-context-vsks self))])
+       (loop (if (box? vsk) (unbox vsk) vsk) null))
+     stacks)
    (define (context->expected-terminals self)
      (define h (make-hash))
      (define (loop vsk)
        (with-tstack vsk [v1 s2 _]
          (for ([t (in-hash-keys (pstate-shift s2))]) (hash-set! h t #t))))
-     (map loop (glr-context-vsks self))
-     (hash-keys h))])
+     (for ([vsk (in-list (glr-context-vsks self))] #:when (not (box? vsk)))
+       (loop vsk))
+     (if (hash-empty? h) #f (hash-keys h)))])
