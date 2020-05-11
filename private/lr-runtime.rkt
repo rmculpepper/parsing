@@ -59,9 +59,8 @@
 
   (define (reduce stack red)
     (match-define (reduction nt index arity ctxn action) red)
-    (define-values (args stack*) (pop-values arity stack))
-    (define args* (peek/prepend-values ctxn stack* args))
-    (define value (make-nt-token nt (apply (get-val action) args*) args))
+    (define-values (stack* args all-args) (pop/peek-values arity ctxn stack))
+    (define value (make-nt-token nt (apply (get-val action) all-args) args))
     (cond [(filter:reject? (token-value* value))
            (fail 'reduce stack value)]
           [else
@@ -108,12 +107,11 @@
 
 ;; ----------------------------------------
 
-(define (pop-values arity stack) ;; produces values in original order
-  (let loop ([arity arity] [stack stack] [acc null])
-    (if (zero? arity)
-        (values acc stack)
-        (loop (sub1 arity) (cddr stack) (cons (cadr stack) acc)))))
+(define (pop/peek-values popn peekn xs) ;; produces values in original order
+  (let loop ([popn popn] [xs xs] [acc null])
+    (cond [(zero? popn) (values xs acc (peek-values peekn xs acc))]
+          [else (loop (sub1 popn) (cddr xs) (cons (cadr xs) acc))])))
 
-(define (peek/prepend-values n stack onto)
-  (let loop ([n n] [stack stack] [acc onto])
-    (if (zero? n) acc (loop (sub1 n) (cddr stack) (cons (cadr stack) acc)))))
+(define (peek-values n xs acc)
+  (let loop ([n n] [xs xs] [acc acc])
+    (if (zero? n) acc (loop (sub1 n) (cddr xs) (cons (cadr xs) acc)))))
