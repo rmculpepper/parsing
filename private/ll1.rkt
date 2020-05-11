@@ -80,7 +80,7 @@
   (define (loop-elem e stack)
     (match e
       [(ntelem nt)
-       (cons (token nt (loop-nt nt stack)) stack)]
+       (cons (loop-nt nt stack) stack)]
       [(telem t tr)
        (define next-tok (get-token #f tr stack))
        (if (eqv? t (token-name next-tok))
@@ -94,10 +94,16 @@
   (define (loop-prod p ctxn stack)
     (match-define (prod nt index item action) p)
     (define stack* (for/fold ([stack stack]) ([e (in-vector item)]) (loop-elem e stack)))
-    (apply (get-val action) (get-args (vector-length item) ctxn stack*)))
+    (apply-action nt action (vector-length item) ctxn stack*))
 
-  (define (get-args popn peekn stack)
-    (for/fold ([acc null]) ([v (in-list stack)] [_i (in-range (+ popn peekn))])
-      (cons v acc)))
+  (define (apply-action nt action popn peekn stack)
+    (define-values (args stack*) (rev-take popn stack null))
+    (define-values (all-args _s) (rev-take peekn stack* args))
+    (make-nt-token nt (apply (get-val action) all-args) args))
 
   (loop-nt start null))
+
+(define (rev-take n xs acc)
+  (let loop ([n n] [xs xs] [acc acc])
+    (cond [(zero? n) (values acc xs)]
+          [else (loop (sub1 n) (cdr xs) (cons (car xs) acc))])))
