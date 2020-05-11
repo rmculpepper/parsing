@@ -6,7 +6,6 @@
          racket/pretty
          "../util/misc.rkt"
          "grammar-rep.rkt"
-         "common.rkt"
          "base-analysis.rkt"
          "lr-common.rkt")
 (provide (all-defined-out))

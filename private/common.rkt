@@ -6,6 +6,8 @@
          (all-from-out "token.rkt")
          (all-from-out (submod "grammar-rep.rkt" common)))
 
+;; Common runtime support code
+
 ;; ============================================================
 
 ;; make-nt-token : NT Any (Listof Token) -> Token

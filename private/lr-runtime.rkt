@@ -117,7 +117,3 @@
 (define (peek/prepend-values n stack onto)
   (let loop ([n n] [stack stack] [acc onto])
     (if (zero? n) acc (loop (sub1 n) (cddr stack) (cons (cadr stack) acc)))))
-
-(define (apply->token f args)
-  (define v (apply f args))
-  (list (if (ok-terminal? v) v 'bad-token-name)))
