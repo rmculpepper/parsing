@@ -15,12 +15,11 @@
 
 (eprintf "\nExample d1:\n")
 (define-grammar d1
-  #:start Message
   [Message [([msg1 #:read MsgByte] [len int4 #:read Int4] [data data #:read (read-data len)])
             #:> (list 1 len data)]
            [([msg2 #:read MsgByte] [d data #:read (read-data '8)])
             #:> (list 2 d)]])
-(define dg1 (lr-parser #:grammar d1))
+(define dg1 (lr-parser #:grammar d1 #:start Message))
 (when PRINT? (send dg1 print))
 
 (define sd1a '((msg1) (int4 4)))
@@ -41,12 +40,11 @@
 
 (eprintf "\nExample d2:\n")
 (define-grammar d2
-  #:start Phrase
   [Phrase [([p Phrase] #\space [w Word]) #:> (append p (list w))]
           [([w Word]) #:> (list w)]]
   [Word [([c letter]) #:> (list c)]
         [([c letter] [w Word]) #:> (cons c w)]])
-(define dg2 (lr-parser #:grammar d2))
+(define dg2 (lr-parser #:grammar d2 #:start Phrase))
 (when PRINT? (send dg2 print))
 
 (define (d2-tokenizer str)
@@ -62,11 +60,10 @@
 
 (eprintf "\nExample d3:\n")
 (define-grammar d3
-  #:start Settings
   [Settings [([ss Settings] [#\; #:read char] [s Setting]) #:> (append ss (list s))]
             [([s Setting]) #:> (list s)]]
   [Setting [([c letter #:read char] [#\= #:read char] [w word]) #:> (list c w)]])
-(define dg3 (lr-parser #:grammar d3))
+(define dg3 (lr-parser #:grammar d3 #:start Settings))
 (when PRINT? (send dg3 print))
 
 (define (d3-tokenizer str)
@@ -88,12 +85,11 @@
 (eprintf "\nExample d3 (LL):\n")
 ;; Modified to be LL(1) friendly
 (define-grammar d3*
-  #:start Settings
   [Settings [([s Setting] [ss MoreSettings]) #:> (cons s ss)]]
   [MoreSettings [([#\; #:read char] [ss Settings]) #:> ss]
                 [() #:> null]]
   [Setting [([c letter #:read char] [#\= #:read char] [w word]) #:> (list c w)]])
-(define l3 (ll1-parser #:grammar d3*))
+(define l3 (ll1-parser #:grammar d3* #:start Settings))
 (when PRINT? (send l3 print))
 
 (send l3 parse (d3-tokenizer sd3a))
@@ -102,12 +98,11 @@
 
 (eprintf "\nExample d4:\n")
 (define-grammar d4
-  #:start S
   [S [([c letter #:read char] [e E] [65 #:top]) #:> (list "got A" c e)]
      [([c letter #:read char] [e E] [66 #:top]) #:> (list "got B" c e)]]
   [E #:context [p]
      [() (char->integer p)]])
-(define gd4 (lr-parser #:grammar d4))
+(define gd4 (lr-parser #:grammar d4 #:start S))
 (when PRINT? (send gd4 print))
 
 (send gd4 parse (d3-tokenizer "A"))

@@ -9,8 +9,10 @@
 
 (define grammar-base%
   (class object%
-    (init-field g)
-    (field [start (grammar-start g)]
+    (init-field g+)
+    (field [g (grammar+-g g+)]
+           [start (grammar+-start g+)]
+           [end (grammar+-end g+)]
            [defs (grammar-defs g)])
     (super-new)
 
@@ -163,7 +165,7 @@
        (hash start (get-end-telems))))
 
     (define/public (get-end-telems)
-      (match (grammar-end g)
+      (match end
         [(? list? ts) (map (lambda (t) (telem t #f)) ts)]
         [#f (list (telem EOI #f))]))
 

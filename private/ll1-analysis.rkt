@@ -76,5 +76,5 @@
         (pretty-print ll1-table)))
     ))
 
-(define (make-LL1 g)
-  (new LL1% (g g)))
+(define (make-LL1 g+)
+  (new LL1% (g+ g+)))

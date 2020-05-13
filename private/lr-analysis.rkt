@@ -17,10 +17,10 @@
 (define START (string->uninterned-symbol "START"))
 (define EOI-elem (telem EOI #f))
 
-(define (lr-adjust-grammar g)
-  (match-define (grammar start ends defs vals) g)
+(define (lr-adjust-grammar g+)
+  (match-define (grammar+ (grammar defs vals) start ends) g+)
   (define start-p (prod START 0 (vector-immutable (ntelem start)) 'accept))
-  (grammar START ends (cons (def START 0 (list start-p)) defs) vals))
+  (grammar+ (grammar (cons (def START 0 (list start-p)) defs) vals) START ends))
 
 (define DOT '•)
 
@@ -84,7 +84,7 @@
   (class grammar-base%
     (init-field [lookahead-mode 'slr1]) ;; (U 'lr0 'slr1 'lalr1)
     (super-new)
-    (inherit-field g start def-h)
+    (inherit-field g start end def-h)
     (inherit nt? nt-follow nt-ctxn)
 
     (define/public (get-vals) (grammar-vals g))
@@ -223,7 +223,7 @@
                         "cannot use token reader with arguments for lookahead"
                         label (car tr)))
                (values tr lookahead/e)]))
-      (when (eq? (grammar-end g) #f) ;; implicit-end mode
+      (when (eq? end #f) ;; implicit-end mode
         ;; In implicit-end mode, must check that if EOI occurs in reduce lookahead,
         ;; then shift is empty AND no other symbol occurs in reduce lookahead.
         (when (and (hash? lookahead/e) (hash-has-key? lookahead/e EOI-elem))
@@ -259,7 +259,7 @@
           (hash-cons h t red))))
 
     (define/private (make-lalr1-lookahead)
-      (let* ([g* (reify-lr0)] [gg* (new grammar-base% (g g*))])
+      (let* ([g* (reify-lr0)] [gg* (new grammar-base% (g+ g*))])
         (define (follow st nt) (send gg* nt-follow (cons (state-index st) nt)))
         (lambda (st reduce)
           (for/fold ([h (hash)]) ([red (in-list reduce)])
@@ -284,9 +284,10 @@
           (match-define (lrprod (prod nt index item action) 0) lrp)
           (define nnt (mknnt st nt))
           (hash-cons h nnt (prod nnt index (get-nitem st item) 'unused-action))))
-      (grammar (mknnt state0 start) (grammar-end g)
-               (for/list ([(nnt prods) (in-hash ndef-h)]) (def nnt 'unused (reverse prods)))
-               'unused-vals))
+      (grammar+ (grammar
+                 (for/list ([(nnt prods) (in-hash ndef-h)]) (def nnt 'unused (reverse prods)))
+                 'unused-vals)
+                (mknnt state0 start) end))
 
     ;; ----------------------------------------
 
@@ -365,4 +366,4 @@
         #;(printf "\n")))
     ))
 
-(define (make-LR g mode) (new LR% (g (lr-adjust-grammar g)) (lookahead-mode mode)))
+(define (make-LR g+ mode) (new LR% (g+ (lr-adjust-grammar g+)) (lookahead-mode mode)))

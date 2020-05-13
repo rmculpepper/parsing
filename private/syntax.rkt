@@ -142,9 +142,13 @@
                                        (or (char? v) (boolean? v) (exact-integer? v)))))
              #:attr ast (syntax-e #'x)))
 
-  (define-splicing-syntax-class start-clause #:attributes (start start.ast)
+  (define-splicing-syntax-class start-clause #:attributes (mkast)
     #:description "start clause"
-    (pattern (~seq #:start start:symbol)))
+    (pattern (~seq #:start start:symbol)
+             #:attr mkast (lambda (nt?)
+                            (unless (nt? ($ start.ast))
+                              (wrong-syntax #'start "expected nonterminal"))
+                            ($ start.ast))))
 
   (define-splicing-syntax-class end-clause
     #:description "end clause"
@@ -156,6 +160,17 @@
                             ($ t.ast)))
     (pattern (~seq #:implicit-end)
              #:attr mkast (lambda (nt?) #f)))
+
+  (define-splicing-syntax-class grammar+start+end
+    (pattern (~seq (~alt (~once (~seq #:grammar (~var g (static grammar? "grammar"))))
+                         (~once start:start-clause)
+                         (~optional end:end-clause))
+                   ...)
+             #:attr ast (let ()
+                          (define nt? (grammar->nt? ($ g.value)))
+                          (grammar+ ($ g.value)
+                                    (($ start.mkast) nt?)
+                                    ((or ($ end.mkast) (lambda (_) '(EOF))) nt?)))))
 
   (struct token-variable (vvar tvar)
     #:property prop:procedure
@@ -205,13 +220,11 @@
   (define (parse-grammar stx #:context ctx)
     (syntax-parse stx
       #:context ctx
-      [((~alt (~once :start-clause) (~optional end:end-clause)) ... d:ntdef ...)
+      [(d:ntdef ...)
        (define (nt? s) (member s ($ d.nt.ast)))
-       (unless (nt? ($ start.ast)) (wrong-syntax #'start "expected nonterminal symbol"))
-       (define ends ((or ($ end.mkast) (lambda (nt?) '(EOF))) nt?))
        (parameterize ((value-table (make-indexer)))
          (define defs (map-apply ($ d.mkast) nt?))
-         (grammar ($ start.ast) ends defs (indexer->vector (value-table))))]))
+         (grammar defs (indexer->vector (value-table))))]))
 
   (void))
 

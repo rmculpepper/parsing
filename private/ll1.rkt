@@ -1,7 +1,7 @@
 #lang racket/base
 (require (for-syntax racket/base
                      racket/class
-                     syntax/parse
+                     (rename-in syntax/parse [attribute $])
                      "grammar-rep.rkt"
                      "../util/datum-to-expr.rkt"
                      "ll1-analysis.rkt")
@@ -15,32 +15,30 @@
  ["ll1-analysis.rkt" (make-LL1)])
 
 (begin-for-syntax
-  (define (make-parser-expr g)
-    (define pg (make-LL1 g))
+  (define (make-parser-expr g+)
+    (define pg (make-LL1 g+))
     (define table (send pg get-table))
     (define vals-expr (datum->expression (send pg get-vals) (lambda (v) (if (syntax? v) v #f))))
-    #`(make-ll1-parser (quote #,table) #,vals-expr (quote #,g))))
+    #`(make-ll1-parser (quote #,table) #,vals-expr (quote #,g+))))
 
 (define-syntax (ll1-parser stx)
   (syntax-parse stx
-    [(_ #:start start def ...)
-     (make-parser-expr (parse-grammar #'start #'(def ...) #:context stx))]
-    [(_ #:grammar (~var g (static grammar? "grammar")))
-     (make-parser-expr (attribute g.value))]))
+    [(_ spec:grammar+start+end)
+     (make-parser-expr ($ spec.ast))]))
 
 (define ll1-parser%
   (class object%
-    (init-field table vals g)
+    (init-field table vals g+)
     (super-new)
     (define/public (parse get-token)
-      (ll1-parse (grammar-start g) table vals get-token))
+      (ll1-parse (grammar+-start g+) table vals get-token))
     (define/public (print)
-      (define rt (make-LL1 g))
+      (define rt (make-LL1 g+))
       (send rt print))
     ))
 
-(define (make-ll1-parser table vals g)
-  (new ll1-parser% (table table) (vals vals) (g g)))
+(define (make-ll1-parser table vals g+)
+  (new ll1-parser% (table table) (vals vals) (g+ g+)))
 
 ;; ============================================================
 

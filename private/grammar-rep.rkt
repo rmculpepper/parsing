@@ -42,10 +42,16 @@
 
 ;; ----------------------------------------
 
-;; A Grammar is (grammar NT EndSpec (Listof Def) ValuesDesc)
-(struct grammar (start end defs vals) #:prefab)
-
+;; A Grammar+ is (grammar+ Grammar NT EndSpec)
 ;; An EndSpec is either (NEListof Terminal) or #f.
+(struct grammar+ (g start end) #:prefab)
+
+;; A Grammar is (grammar (Listof Def) ValuesDesc)
+(struct grammar (defs vals) #:prefab)
+
+(define (grammar->nt? g)
+  (define nts (map def-nt (grammar-defs g)))
+  (lambda (s) (and (member s nts) #t)))
 
 ;; A Def is (def NT Nat (Listof Prod))
 ;; ctxn is the number of extra value slots of context that action routines get.
