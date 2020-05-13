@@ -18,7 +18,7 @@
 ;; In addition, the following abbreviated Elements are allowed:
 ;; - NT                         -- short for [_ NT]
 ;; - T                          -- short for [_ T #:read default]
-;; - [name T]                   -- short for [name T #:read default]
+;; - [name T]                   -- short for [name T #:read (default)]
 ;; - [name T #:read TR]         -- short for [name T #:read (TR)]
 ;; - [T #:read (TR Expr ...)]   -- short for [_ T #:read (TR Expr ...)]
 
@@ -37,7 +37,8 @@
              #:attr mkast (lambda (nt?)
                             (def ($ nt.ast) (length ($ ps.spec))
                               (parameterize ((params-spec ($ ps.spec)))
-                                (for/list ([rhs-mkast (in-list ($ rhs.mkast))] [index (in-naturals)])
+                                (for/list ([rhs-mkast (in-list ($ rhs.mkast))]
+                                           [index (in-naturals)])
                                   (rhs-mkast ($ nt.ast) index nt?)))))))
 
   (define-splicing-syntax-class params-clause #:attributes (spec)
@@ -48,6 +49,7 @@
              #:attr spec null))
 
   (define-syntax-class ntrhs #:attributes (mkast)
+    #:description "nonterminal production"
     (pattern [es:elemseq a:action]
              #:attr mkast (lambda (nt index nt?)
                             (define-values (es-ast venv) (($ es.mkast) nt?))
@@ -62,7 +64,8 @@
     (pattern (~seq #:apply ~! proc:expr)
              #:attr mkast (lambda (nt index venv) (add-value! #'(mk-action proc))))
     (pattern (~seq (~optional (~seq #:> ~!)) e:expr ...+)
-             #:attr mkast (lambda (nt index venv) (add-value! (wrap-expr #'(let () e ...) venv)))))
+             #:attr mkast (lambda (nt index venv)
+                            (add-value! (wrap-expr #'(let () e ...) venv)))))
 
   (define-syntax-class elemseq #:attributes (mkast)
     #:description "element sequence"
@@ -75,6 +78,9 @@
                                        [var (in-list ($ e.name))]
                                        [index (in-naturals 1)])
                               (define elem (e-mkast nt? venv))
+                              (when (and (= index 1) (top-elem? elem))
+                                (wrong-syntax (car (syntax->list #'(e ...)))
+                                              "first element in production cannot be #:top"))
                               (values (cons elem acc)
                                       (cond [(top-elem? elem) venv]
                                             [else (cons (or var (mk-$n index)) venv)]))))))
@@ -110,12 +116,12 @@
 
   (define-splicing-syntax-class elem-content #:attributes (mkast)
     #:description "element content"
-    (pattern (~seq t:token-name #:read tk:symbol)
+    (pattern (~seq t:token-name #:read (~or tk:symbol (tk:symbol)))
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tk to list to check at runtime?
                             (when (nt? ($ t.ast)) (wrong-syntax #'t "expected terminal symbol"))
                             (telem ($ t.ast) ($ tk.ast))))
-    (pattern (~seq t:token-name #:read (tf:symbol arg:expr ...))
+    (pattern (~seq t:token-name #:read (tf:symbol arg:expr ...+))
              #:with args:user-expr #'(list arg ...)
              #:attr mkast (lambda (nt? venv)
                             ;; FIXME: add tf and arity to list to check at runtime?
