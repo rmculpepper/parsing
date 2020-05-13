@@ -185,12 +185,9 @@
       (define shift (for/hash ([(elem st) (in-hash (state-edges st))]
                                #:when (t/top-elem? elem))
                       (values (t/top-elem-t elem) (state-index st))))
-      (define goto (let ([goto (for/hash ([(elem st) (in-hash (state-edges st))]
-                                          #:when (ntelem? elem))
-                                 (values (ntelem-nt elem) (state-index st)))])
-                     (cond [(assoc st init-states)
-                            => (lambda (p) (hash-set goto (cdr p) 'accept))]
-                           [else goto])))
+      (define goto (for/hash ([(elem st) (in-hash (state-edges st))]
+                              #:when (ntelem? elem))
+                     (values (ntelem-nt elem) (state-index st))))
       ;; FIXME: intern shift, goto?
       (define reduce
         (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))

@@ -53,13 +53,16 @@
 
   (define (reduce stack red)
     (match-define (reduction nt index arity ctxn action) red)
-    (define-values (stack* args all-args) (pop/peek-values arity ctxn stack))
-    (define value (make-nt-token nt (apply (get-val action) all-args) args))
-    (cond [(filter:reject? (token-value* value))
-           (fail 'reduce stack value)]
+    (cond [(eq? action 'accept)
+           (cadr stack)]
           [else
-           (dprintf "REDUCE: ~v\n" nt value)
-           (goto value stack*)]))
+           (define-values (stack* args all-args) (pop/peek-values arity ctxn stack))
+           (define value (make-nt-token nt (apply (get-val action) all-args) args))
+           (cond [(filter:reject? (token-value* value))
+                  (fail 'reduce stack value)]
+                 [else
+                  (dprintf "REDUCE: ~v\n" nt value)
+                  (goto value stack*)])]))
 
   (define (shift st stack)
     (match (pstate-tr st)
@@ -92,8 +95,7 @@
     (dprintf "RETURN VIA #~s\n" (pstate-index st))
     (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
     (dprintf "GOTO ~v\n" next-state)
-    (cond [(eq? next-state 'accept) reduced]
-          [else (loop (list* (get-state next-state) reduced stack))]))
+    (loop (list* (get-state next-state) reduced stack)))
 
   (define (fail how stack next-tok)
     (parse-error 'lr-parser (lr-context how (cons next-tok stack))))

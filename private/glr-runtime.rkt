@@ -150,13 +150,17 @@
 
   (define (reduce st vsk* red next-tok)
     (match-define (reduction nt index arity ctxn action) red)
-    (with-tstack-pop/peek-values (cons st vsk*) arity ctxn
-      (lambda (sk** args all-args)
-        (define value (make-nt-token nt (apply (get-val action) all-args) args))
-        (dprintf "REDUCE(~s): ~v\n" nt value)
-        (cond [(filter:reject? (token-value* value))
-               (when KEEP-FAIL? (push! failed (cons value sk**)))]
-              [else (goto value sk** next-tok)]))))
+    (cond [(eq? action 'accept)
+           (with-tstack vsk* [v sk**]
+             (push! done v))]
+          [else
+           (with-tstack-pop/peek-values (cons st vsk*) arity ctxn
+             (lambda (sk** args all-args)
+               (define value (make-nt-token nt (apply (get-val action) all-args) args))
+               (dprintf "REDUCE(~s): ~v\n" nt value)
+               (cond [(filter:reject? (token-value* value))
+                      (when KEEP-FAIL? (push! failed (cons value sk**)))]
+                     [else (goto value sk** next-tok)])))]))
 
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
     (define tr (stacks-consistent-tr sks))
@@ -191,10 +195,7 @@
       (dprintf "RETURN VIA #~s\n" (pstate-index st))
       (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
       (dprintf "GOTO ~v\n" next-state)
-      (cond [(eq? next-state 'accept)
-             (push! done reduced)]
-            [else
-             (run-until-look* (get-state next-state) (list* reduced st vsk*) next-tok)])))
+      (run-until-look* (get-state next-state) (list* reduced st vsk*) next-tok)))
 
   (define (run-all-ready)
     (dprintf "\n==== STEP ====\n")

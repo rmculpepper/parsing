@@ -8,7 +8,7 @@
 ;; Shifts = Hash[TerminalSymbol => Nat]
 ;; Reduces = (Listof Reduction)
 ;; Lookahead = #f | Hash[TerminalSymbol => Reduces]
-;; Gotos = Hash[NT => (U Nat 'accept)]
+;; Gotos = Hash[NT => Nat]
 
 (struct pstate (index label tr shift reduce goto lookahead) #:prefab)
 (struct reduction (nt index arity ctxn action) #:prefab)
@@ -19,7 +19,8 @@
 ;; | '#:top             -- use the value from the top of the stack; reduces = null
 
 ;; Reduction = (reduction NT Nat Nat Action)
-;; Action = Nat -- index in values vector
+;; Action = Nat     -- index in values vector
+;;        | 'accept -- accept, return the top value
 
 ;; A Reduction carries its NT (and its production index, for debugging).
 ;; The arity indicates how many Token values should be popped from the
