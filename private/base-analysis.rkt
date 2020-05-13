@@ -177,6 +177,13 @@
 
     ;; ----------------------------------------
 
+    (define/public (get-summary-data)
+      (hasheq 'grammar+ g+
+              'nullable nt-nullable-h
+              'min-length nt-minlen-h
+              'first nt-first-h
+              'follow nt-follow-h))
+
     (define/public (print)
       (printf "Nullable: ~s\n"
               (for/list ([(nt n?) (in-hash nt-nullable-h)] #:when n?) nt))

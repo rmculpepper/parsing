@@ -64,6 +64,10 @@
 
     ;; ----------------------------------------
 
+    (define/override (get-summary-data)
+      (hash-set* (super get-summary-data)
+                 'll1-conflicts ll1-conflicts))
+
     (define/override (print)
       (super print)
       (when (pair? ll1-conflicts)

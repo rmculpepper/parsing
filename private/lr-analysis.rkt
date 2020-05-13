@@ -325,6 +325,15 @@
 
     ;; ========================================
 
+    (define/override (get-summary-data)
+      (hash-set* (super get-summary-data)
+                 'lookahead-mode lookahead-mode
+                 'states (for/vector ([state (indexer->vector state-ix)])
+                           (for/list ([lrp (in-list state)])
+                             (prod->label lrp)))
+                 'pstates pstates
+                 'conflicts (get-conflicts)))
+
     (define/override (print)
       (super print)
       (when #t

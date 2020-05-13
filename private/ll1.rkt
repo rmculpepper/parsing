@@ -6,14 +6,12 @@
                      "ll1-analysis.rkt")
          racket/match
          racket/class
-         racket/lazy-require
+         racket/promise
          "grammar-rep.rkt"
          "common.rkt"
-         "syntax.rkt")
+         "syntax.rkt"
+         "analysis-runtime.rkt")
 (provide (all-defined-out))
-
-(lazy-require
- ["ll1-analysis.rkt" (make-LL1)])
 
 (begin-for-syntax
   (define (make-parser-expr g+)
@@ -23,7 +21,7 @@
     #`(make-ll1-parser (quote #,table)
                        (quote #,(grammar+-start g+))
                        #,vals-expr
-                       (quote #,g+))))
+                       (quote #,(send pg get-summary-data)))))
 
 (define-syntax (ll1-parser stx)
   (syntax-parse stx
@@ -32,17 +30,20 @@
 
 (define ll1-parser%
   (class object%
-    (init-field table start vals g+)
+    (init-field table start vals)
+    (init summary-data)
     (super-new)
+
     (define/public (parse get-token)
       (ll1-parse start table vals get-token))
+
+    (define rt (delay (new LL1-done% (summary-data summary-data))))
     (define/public (print)
-      (define rt (make-LL1 g+))
-      (send rt print))
+      (send (force rt) print))
     ))
 
-(define (make-ll1-parser table start vals g+)
-  (new ll1-parser% (table table) (start start) (vals vals) (g+ g+)))
+(define (make-ll1-parser table start vals summary-data)
+  (new ll1-parser% (table table) (start start) (vals vals) (summary-data summary-data)))
 
 ;; ============================================================
 

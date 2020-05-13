@@ -23,7 +23,7 @@
   ;; In particular, a Terminal is quotable and comparable with eqv?.
   (define (ok-terminal? v)
     (or (symbol? v) (char? v) (exact-integer? v)))
-  (define EOI (string->unreadable-symbol "#EOI#"))
+  (define EOI (string->unreadable-symbol "$EOI$"))
 
   ;; A user expression may refer to parameters and previous results. It is
   ;; translated to a function that takes then as arguments, along with indicators

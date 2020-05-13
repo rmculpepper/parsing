@@ -4,14 +4,13 @@
                      (rename-in syntax/parse [attribute $])
                      "lr-analysis.rkt")
          racket/class
+         racket/promise
          racket/lazy-require
          "syntax.rkt"
+         "analysis-runtime.rkt"
          "lr-runtime.rkt"
          "glr-runtime.rkt")
 (provide (all-defined-out))
-
-(lazy-require
- ["lr-analysis.rkt" (make-LR)])
 
 (begin-for-syntax
   (define-syntax-class mode
@@ -22,7 +21,8 @@
     (define pg (make-LR g+ mode))
     (define pstates (send pg get-pstates))
     (define vals-expr (send pg get-vals))
-    #`(make-lr-parser (quote #,pstates) #,vals-expr (quote #,g+) (quote #,mode))))
+    #`(make-lr-parser (quote #,pstates) #,vals-expr (quote #,mode)
+                      (quote #,(send pg get-summary-data)))))
 
 (define-syntax (lr-parser stx)
   (syntax-parse stx
@@ -31,19 +31,21 @@
 
 (define lr-parser%
   (class object%
-    (init-field pstates vals g+ mode)
+    (init-field pstates vals mode)
+    (init summary-data)
     (super-new)
+
     (define/public (parse get-token)
       (lr-parse pstates vals get-token))
     (define/public (parse* get-token)
       (glr-parse pstates vals get-token #:mode 'first-done))
+
+    (define rt (delay (new LR-done% (summary-data summary-data))))
     (define/public (print)
-      (define rt (make-LR g+ mode))
-      (send rt print))
+      (send (force rt) print))
     (define/public (reify-lr0)
-      (define rt (make-LR g+ mode))
-      (send rt reify-lr0))
+      (send (force rt) reify-lr0))
     ))
 
-(define (make-lr-parser pstates vals g+ mode)
-  (new lr-parser% (pstates pstates) (vals vals) (g+ g+) (mode mode)))
+(define (make-lr-parser pstates vals mode summary-data)
+  (new lr-parser% (pstates pstates) (vals vals) (mode mode) (summary-data summary-data)))

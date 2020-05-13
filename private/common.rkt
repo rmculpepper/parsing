@@ -1,5 +1,6 @@
 #lang racket/base
 (require racket/match
+         racket/class
          racket/generic
          (submod "grammar-rep.rkt" common)
          "token.rkt")
