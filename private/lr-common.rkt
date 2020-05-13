@@ -1,5 +1,4 @@
 #lang racket/base
-(require "token.rkt")
 (provide (all-defined-out))
 
 ;; PState = (pstate StIndex Label TR Shifts Reduces Gotos Lookahead)

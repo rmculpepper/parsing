@@ -4,7 +4,6 @@
                      syntax/transformer
                      syntax/free-vars
                      (rename-in syntax/parse [attribute $])
-                     macro-debugger/emit
                      "../util/misc.rkt"
                      "grammar-rep.rkt")
          "common.rkt")

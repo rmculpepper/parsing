@@ -3,10 +3,11 @@
                      racket/class
                      (rename-in syntax/parse [attribute $])
                      "grammar-rep.rkt"
-                     "../util/datum-to-expr.rkt"
                      "ll1-analysis.rkt")
+         racket/match
          racket/class
          racket/lazy-require
+         "grammar-rep.rkt"
          "common.rkt"
          "syntax.rkt")
 (provide (all-defined-out))
@@ -19,7 +20,10 @@
     (define pg (make-LL1 g+))
     (define table (send pg get-table))
     (define vals-expr (send pg get-vals))
-    #`(make-ll1-parser (quote #,table) #,vals-expr (quote #,g+))))
+    #`(make-ll1-parser (quote #,table)
+                       (quote #,(grammar+-start g+))
+                       #,vals-expr
+                       (quote #,g+))))
 
 (define-syntax (ll1-parser stx)
   (syntax-parse stx
@@ -28,26 +32,19 @@
 
 (define ll1-parser%
   (class object%
-    (init-field table vals g+)
+    (init-field table start vals g+)
     (super-new)
     (define/public (parse get-token)
-      (ll1-parse (grammar+-start g+) table vals get-token))
+      (ll1-parse start table vals get-token))
     (define/public (print)
       (define rt (make-LL1 g+))
       (send rt print))
     ))
 
-(define (make-ll1-parser table vals g+)
-  (new ll1-parser% (table table) (vals vals) (g+ g+)))
+(define (make-ll1-parser table start vals g+)
+  (new ll1-parser% (table table) (start start) (vals vals) (g+ g+)))
 
 ;; ============================================================
-
-(require racket/match
-         racket/class
-         racket/list
-         racket/pretty
-         racket/set
-         "grammar-rep.rkt")
 
 (define (ll1-parse start table vals tz)
   (define (get-token peek? tr stack)

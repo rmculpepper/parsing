@@ -1,6 +1,5 @@
 #lang racket/base
 (require racket/match
-         racket/list
          "common.rkt"
          "lr-common.rkt")
 (provide (all-defined-out))

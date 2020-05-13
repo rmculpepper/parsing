@@ -2,12 +2,9 @@
 (require (for-syntax racket/base
                      racket/class
                      (rename-in syntax/parse [attribute $])
-                     "grammar-rep.rkt"
-                     "../util/datum-to-expr.rkt"
                      "lr-analysis.rkt")
          racket/class
          racket/lazy-require
-         "common.rkt"
          "syntax.rkt"
          "lr-runtime.rkt"
          "glr-runtime.rkt")
