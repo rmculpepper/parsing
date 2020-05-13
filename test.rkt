@@ -47,9 +47,9 @@
 ;; --------------------
 
 (eprintf "\nExample 2:\n")
-;; Example with LR0 "virtual" accept state
+;; Example with implicit end
 (define-grammar g2
-  #:start Expr
+  #:start Expr #:implicit-end
   [Expr [(atom) #:> $1]
         [(lparen Expr op Expr rparen) (list $2 $3 $4)]])
 (define gg2 (lr-parser #:grammar g2))
@@ -114,7 +114,7 @@
 (eprintf "\nExample 6:\n")
 ;; Example with LR0 reduce/reduce conflict, solved by lookahead
 (define-grammar g6
-  #:start A
+  #:start A #:implicit-end
   [A [(B x) #:auto]
      [(C y) #:auto]]
   [B [(a) #:auto]]
@@ -219,6 +219,23 @@
 (send lg10 parse (mktz s10c))
 (send gg10 parse* (mktz s10c))
 
+;; --------------------
+
+(eprintf "\nExample 11:\n")
+;; Another example of implicit-end
+(define-grammar g11
+  #:start E #:implicit-end
+  [E [(lparen T rparen) #:auto]]
+  [T [(atom) #:auto]
+     [(T op T) #:auto]
+     [(E) #:auto]])
+(define gg11 (lr-parser #:grammar g11))
+(when PRINT? (send gg11 print))
+
+(define s11a '((lparen) (atom) (op) (atom) (op) (atom) (rparen)))
+
+(send gg11 parse (mktz s11a))
+(send gg11 parse* (mktz s11a))
 
 ;; ========================================
 ;; Parameters
