@@ -104,7 +104,7 @@
   (define KEEP-FAIL? #t)
   (define-syntax-rule (dprintf fmt arg ...) (when DEBUG? (eprintf fmt arg ...)))
   (define (get-state n) (vector-ref states n))
-  (define (get-val n) (vector-ref vals n))
+  (define (get-val n) (if (eq? n 'accept) values (vector-ref vals n)))
 
   (define (get-next-token tr)
     ;; FIXME: for now, just support no-argument token-readers
@@ -123,17 +123,7 @@
     (with-tstack sk [st vsk*] (run-until-look* st vsk* next-tok)))
   (define (run-until-look* st vsk* next-tok)
     (dprintf "\nR2L STATE = #~v, ~s\n" (pstate-index st) (pstate-label st))
-    (cond [(and (eq? (pstate-accept st) 'true))
-           ;; we got here by a shift; discard shift and return state
-           (dprintf "-- R2L #~s accept\n" (pstate-index st))
-           (with-tstack vsk* [v1 s2 v3 sk**]
-             (push! done v3))]
-          [(and (eq? (pstate-accept st) 'virtual) (memq mode '(first-done)))
-           ;; we got here by a goto; result is first value
-           (dprintf "-- R2L #~s virtual accept\n" (pstate-index st))
-           (with-tstack vsk* [v1 sk**]
-             (push! done v1))]
-          [(pstate-lookahead st)
+    (cond [(pstate-lookahead st)
            => (lambda (lookahead)
                 (cond [next-tok
                        (dprintf "-- R2L #~s lookahead (~v)\n"
@@ -201,7 +191,10 @@
       (dprintf "RETURN VIA #~s\n" (pstate-index st))
       (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
       (dprintf "GOTO ~v\n" next-state)
-      (run-until-look* (get-state next-state) (list* reduced st vsk*) next-tok)))
+      (cond [(eq? next-state 'accept)
+             (push! done reduced)]
+            [else
+             (run-until-look* (get-state next-state) (list* reduced st vsk*) next-tok)])))
 
   (define (run-all-ready)
     (dprintf "\n==== STEP ====\n")

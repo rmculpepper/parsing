@@ -2,15 +2,15 @@
 (require "token.rkt")
 (provide (all-defined-out))
 
-;; PState = (pstate StIndex Label TR Shifts Reduces Gotos Accept Lookahead)
+;; PState = (pstate StIndex Label TR Shifts Reduces Gotos Lookahead)
 ;; StIndex = Nat
 ;; Label = Any
 ;; Shifts = Hash[TerminalSymbol => Nat]
 ;; Reduces = (Listof Reduction)
 ;; Lookahead = #f | Hash[TerminalSymbol => Reduces]
-;; Gotos = Hash[NT => Nat]
+;; Gotos = Hash[NT => (U Nat 'accept)]
 
-(struct pstate (index label tr shift reduce goto accept lookahead) #:prefab)
+(struct pstate (index label tr shift reduce goto lookahead) #:prefab)
 (struct reduction (nt index arity ctxn action) #:prefab)
 
 ;; TR =
@@ -24,12 +24,6 @@
 ;; A Reduction carries its NT (and its production index, for debugging).
 ;; The arity indicates how many Token values should be popped from the
 ;; stack and given to the action routine (fetched from the values vector).
-
-;; Accept =
-;; | #f         -- not an accept state
-;; | 'true      -- state with reduction for START
-;;                 equivalently, whose item ends with [EOF DOT]
-;; | 'virtual   -- state whose only shift edge is EOF (to a true accept state)
 
 
 ;; I'll describe the semantics of Shifts, Reduces, Lookahead, and

@@ -15,15 +15,14 @@
 ;; ============================================================
 
 (define START (string->uninterned-symbol "START"))
-(define EOF-elem (telem EOF #f))
+(define EOI-elem (telem EOI #f))
 
 (define (lr-adjust-grammar g)
-  (match-define (grammar start defs vals) g)
-  (define start-p (prod START 0 (vector-immutable (ntelem start) EOF-elem) 'accept))
-  (grammar START (cons (def START 0 (list start-p)) defs) vals))
+  (match-define (grammar start ends defs vals) g)
+  (define start-p (prod START 0 (vector-immutable (ntelem start)) 'accept))
+  (grammar START ends (cons (def START 0 (list start-p)) defs) vals))
 
-(define DOT (string->uninterned-symbol "•"))
-;;(define DOT (string->uninterned-symbol "◇"))
+(define DOT '•)
 
 ;; An LR0-Prod is (lrprod Prod Nat)
 ;; where dotk is in [0, (vector-length (prod-item p))] --- inclusive!.
@@ -145,8 +144,11 @@
              (for/hash ([(elem lrps) (in-hash groups)])
                (values elem (kernel->state (map lrprod-advance-dot (reverse lrps)))))]))
 
+    (define init-states (list (cons state0 start))) ;; (Listof (cons State NT))
     (define state-edge-h ;; Hash[State => Hash[Elem => State]]
-      (closure (list state0) (lambda (state) (state-make-next state)) #:worklist hash-values))
+      (closure (map car init-states)
+               (lambda (state) (state-make-next state))
+               #:worklist hash-values))
     (define/public (state-edges state) (hash-ref state-edge-h state))
     (define/public (state-edge state sym) (hash-ref (state-edges state) sym #f))
 
@@ -183,18 +185,17 @@
       (define shift (for/hash ([(elem st) (in-hash (state-edges st))]
                                #:when (t/top-elem? elem))
                       (values (t/top-elem-t elem) (state-index st))))
-      (define goto (for/hash ([(elem st) (in-hash (state-edges st))]
-                              #:when (ntelem? elem))
-                     (values (ntelem-nt elem) (state-index st))))
+      (define goto (let ([goto (for/hash ([(elem st) (in-hash (state-edges st))]
+                                          #:when (ntelem? elem))
+                                 (values (ntelem-nt elem) (state-index st)))])
+                     (cond [(assoc st init-states)
+                            => (lambda (p) (hash-set goto (cdr p) 'accept))]
+                           [else goto])))
       ;; FIXME: intern shift, goto?
       (define reduce
         (for/list ([lrp (in-list st)] #:when (lrprod-dot-final? lrp))
           (match-define (lrprod (prod nt index item action) _) lrp)
           (reduction nt index (item->arity item) (nt-ctxn nt) action)))
-      (define accept
-        (cond [(equal? (map reduction-nt reduce) (list start)) 'true]
-              [(equal? (hash-keys shift) (list EOF-elem)) 'virtual]
-              [else #f]))
       ;; Must check that shift TRs is consistent, also consistent with lookahead
       ;; TRs (if used). NOTE: Cannot use TR w/ args in lookahead! Args depends
       ;; on post-reduction stack indexes AND might refer to value from
@@ -225,12 +226,23 @@
                         "cannot use token reader with arguments for lookahead"
                         label (car tr)))
                (values tr lookahead/e)]))
+      (when (eq? (grammar-end g) #f) ;; implicit-end mode
+        ;; In implicit-end mode, must check that if EOI occurs in reduce lookahead,
+        ;; then shift is empty AND no other symbol occurs in reduce lookahead.
+        (when (and (hash? lookahead/e) (hash-has-key? lookahead/e EOI-elem))
+          (when shift
+            (error 'lr-parser "end-of-input conflict with shift\n  shift terminals: ~e"
+                   (hash-keys shift)))
+          (when (> (hash-count lookahead/e) 1)
+            (error 'lr-parser "end-of-input conflict with reduction\n  lookahead: ~e"
+                   (for/list ([e (in-hash-keys lookahead/e)] #:when (not (equal? e EOI-elem)))
+                     (telem-t e))))))
       (define lookahead
         (and lookahead/e
              (not (eq? lookahead-mode 'lr0))
              (for/hash ([(elem red) (in-hash lookahead/e)])
                (values (telem-t elem) red))))
-      (pstate index label tr shift reduce goto accept lookahead))
+      (pstate index label tr shift reduce goto lookahead))
 
     ;; ----------------------------------------
 
@@ -275,14 +287,14 @@
           (match-define (lrprod (prod nt index item action) 0) lrp)
           (define nnt (mknnt st nt))
           (hash-cons h nnt (prod nnt index (get-nitem st item) 'unused-action))))
-      (grammar (mknnt state0 start)
+      (grammar (mknnt state0 start) (grammar-end g)
                (for/list ([(nnt prods) (in-hash ndef-h)]) (def nnt 'unused (reverse prods)))
                'unused-vals))
 
     ;; ----------------------------------------
 
     (define/private (pstate-conflicts st use-lookahead?)
-      (match-define (pstate index _ _ shift reduce _ _ _) st)
+      (match-define (pstate index _ _ shift reduce _ _) st)
       (define (check-rr reds [t #f])
         (if (> (length reds) 1) (list (conflict:r/r index t)) null))
       (append
@@ -338,7 +350,7 @@
     (define/public (print-states [edges? #t])
       (for ([st pstates]) (print-state st edges?)))
     (define/public (print-state st [edges? #t])
-      (match-define (pstate i label tr shift reduce goto accept reduce-lookahead) st)
+      (match-define (pstate i label tr shift reduce goto reduce-lookahead) st)
       (printf "State ~s: ~s\n" i label)
       (when edges?
         (for ([(t next-st) (in-hash shift)])

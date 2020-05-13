@@ -23,7 +23,7 @@
   ;; In particular, a Terminal is quotable and comparable with eqv?.
   (define (ok-terminal? v)
     (or (symbol? v) (char? v) (exact-integer? v)))
-  (define EOF (string->unreadable-symbol "EOF"))
+  (define EOI (string->unreadable-symbol "#EOI#"))
 
   ;; A user expression may refer to parameters and previous results. It is
   ;; translated to a function that takes then as arguments, along with indicators
@@ -42,8 +42,10 @@
 
 ;; ----------------------------------------
 
-;; A Grammar is (grammar NT (Listof Def) ValuesDesc)
-(struct grammar (start defs vals) #:prefab)
+;; A Grammar is (grammar NT EndSpec (Listof Def) ValuesDesc)
+(struct grammar (start end defs vals) #:prefab)
+
+;; An EndSpec is either (NEListof Terminal) or #f.
 
 ;; A Def is (def NT Nat (Listof Prod))
 ;; ctxn is the number of extra value slots of context that action routines get.
@@ -92,7 +94,7 @@
 ;; An alternative to static checking is dynamic checking or a hybrid.
 
 (define (elems-consistent-tr who elems)
-  (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOF
+  (define proper-elems (filter telem-tr elems)) ;; ignore polymorphic tokens like EOI
   (match (group-by telem-tr proper-elems)
     [(list) default-tr]
     [(list group)

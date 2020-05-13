@@ -160,7 +160,12 @@
                                    (if (nt-nullable? nt) follows-this null)))]
                [(? telem?) (values h (list elem))]
                [(? top-elem?) (values h follows-this)]))))
-       (hash start (list (telem EOF #f)))))
+       (hash start (get-end-telems))))
+
+    (define/public (get-end-telems)
+      (match (grammar-end g)
+        [(? list? ts) (map (lambda (t) (telem t #f)) ts)]
+        [#f (list (telem EOI #f))]))
 
     ;; *-follow : ... -> (Listof telem)
     (define/public (nt-follow nt #:h [h nt-follow-h])

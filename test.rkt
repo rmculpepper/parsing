@@ -19,7 +19,7 @@
     (define toks (make-toks vs))
     (peeking-tokenizer
      (lambda (_p? _k _a)
-       (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) EOF-tok)))))
+       (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) (token 'EOF))))))
 
 (require 'util)
 

@@ -17,7 +17,7 @@
   (define DEBUG? #f)
   (define-syntax-rule (dprintf fmt arg ...) (when DEBUG? (eprintf fmt arg ...)))
   (define (get-state n) (vector-ref states n))
-  (define (get-val n) (vector-ref vals n))
+  (define (get-val n) (if (eq? n 'accept) values (vector-ref vals n)))
 
   (define (get-token peek? tr stack)
     (cond [(symbol? tr)
@@ -40,13 +40,7 @@
   (define (loop* st stack)
     ;; st is usually (car stack), except when forwarded by #:top
     (dprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st))
-    (cond [(pstate-accept st)
-           => (lambda (accept)
-                ;; Did we get here by a shift or a goto?
-                (case accept
-                  [(true) (cadr (cddr stack))]
-                  [(virtual) (cadr stack)]))]
-          [(pstate-lookahead st)
+    (cond [(pstate-lookahead st)
            => (lambda (lookahead)
                 (define next-tok (get-token #t (pstate-tr st) stack))
                 (cond [(hash-ref lookahead (token-name next-tok) #f)
@@ -98,7 +92,8 @@
     (dprintf "RETURN VIA #~s\n" (pstate-index st))
     (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
     (dprintf "GOTO ~v\n" next-state)
-    (loop (list* (get-state next-state) reduced stack)))
+    (cond [(eq? next-state 'accept) reduced]
+          [else (loop (list* (get-state next-state) reduced stack))]))
 
   (define (fail how stack next-tok)
     (parse-error 'lr-parser (lr-context how (cons next-tok stack))))

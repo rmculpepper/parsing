@@ -24,8 +24,6 @@
       (token-value tok)
       (error who "token has no payload\n  token: ~e" tok)))
 
-(define EOF-tok EOF)
-
 ;; ============================================================
 
 ;; A Tokenizer is (Boolean Symbol (Listof Arg) -> Token).
@@ -70,19 +68,19 @@
 
 (define (get-char-token in #:token-name [tname 'char] #:special [special null])
   (define next (peek-char in))
-  (cond [(eof-object? next) EOF-tok]
+  (cond [(eof-object? next) (token 'EOF)]
         [(memv next special) (begin (read-char in) (token next next))]
         [else (begin (read-char in) (token tname next))]))
 
 (define (get-byte-token in #:token-name [tname 'byte] #:special [special null])
   (define next (peek-byte in))
-  (cond [(eof-object? next) EOF-tok]
+  (cond [(eof-object? next) (token 'EOF)]
         [(memv next special) (begin (read-byte in) (token next next))]
         [else (begin (read-byte in) (token tname next))]))
 
 (define (get-string-token in #:token-name [tname 'string] #:delimiters [delims null])
   (define next (peek-char in))
-  (cond [(eof-object? next) EOF-tok]
+  (cond [(eof-object? next) (token 'EOF)]
         [else
          (define out (open-output-string))
          (let loop ()

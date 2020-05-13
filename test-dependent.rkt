@@ -32,7 +32,7 @@
    (lambda (peek? kind args)
      (case kind
        [(read-data) (token 'data (car args))]
-       [else (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) EOF-tok)]))))
+       [else (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) (token 'EOF))]))))
 
 (send dg1 parse (d1-tokenizer sd1a))
 (send dg1 parse (d1-tokenizer sd1b))

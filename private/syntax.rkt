@@ -142,6 +142,21 @@
                                        (or (char? v) (boolean? v) (exact-integer? v)))))
              #:attr ast (syntax-e #'x)))
 
+  (define-splicing-syntax-class start-clause #:attributes (start start.ast)
+    #:description "start clause"
+    (pattern (~seq #:start start:symbol)))
+
+  (define-splicing-syntax-class end-clause
+    #:description "end clause"
+    (pattern (~seq #:end [t:token-name ...])
+             #:attr mkast (lambda (nt?)
+                            (for ([t (in-list (syntax->list #'(t ...)))])
+                              (when (nt? (syntax-e t))
+                                (wrong-syntax t "expected terminal")))
+                            ($ t.ast)))
+    (pattern (~seq #:implicit-end)
+             #:attr mkast (lambda (nt?) #f)))
+
   (struct token-variable (vvar tvar)
     #:property prop:procedure
     (lambda (self stx)
@@ -187,15 +202,16 @@
       #'(lambda (param-var ... tok-var ...)
           (letrec-syntax (param-binding ... tok-binding ...) expr))))
 
-  (define (parse-grammar start defs #:context ctx)
-    (syntax-parse (cons start defs)
+  (define (parse-grammar stx #:context ctx)
+    (syntax-parse stx
       #:context ctx
-      [(start:symbol d:ntdef ...)
+      [((~alt (~once :start-clause) (~optional end:end-clause)) ... d:ntdef ...)
        (define (nt? s) (member s ($ d.nt.ast)))
        (unless (nt? ($ start.ast)) (wrong-syntax #'start "expected nonterminal symbol"))
+       (define ends ((or ($ end.mkast) (lambda (nt?) '(EOF))) nt?))
        (parameterize ((value-table (make-indexer)))
          (define defs (map-apply ($ d.mkast) nt?))
-         (grammar ($ start.ast) defs (indexer->vector (value-table))))]))
+         (grammar ($ start.ast) ends defs (indexer->vector (value-table))))]))
 
   (void))
 
@@ -207,8 +223,8 @@
 
 (define-syntax Grammar
   (syntax-parser
-    [(_ #:start start def ...)
-     (datum->expression (parse-grammar #'start #'(def ...) #:context this-syntax)
+    [(_ part ...)
+     (datum->expression (parse-grammar #'(part ...) #:context this-syntax)
                         (lambda (v) (cond [(syntax? v) v] [else #f])))]))
 
 ;; ----------------------------------------
@@ -216,10 +232,10 @@
 (begin-for-syntax
   (define (parse-grammar* stx)
     (syntax-parse stx
-      [(_ _ #:start start def ...)
-       (parse-grammar #'start #'(def ...) #:context stx)])))
+      [(_ _ part ...)
+       (parse-grammar #'(part ...) #:context stx)])))
 
 (define-syntax define-grammar
   (syntax-parser
-    [(_ name:id #:start start def ...)
+    [(_ name:id _ ...)
      #`(define-syntax name (parse-grammar* (quote-syntax #,this-syntax)))]))
