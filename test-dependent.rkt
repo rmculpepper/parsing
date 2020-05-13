@@ -113,15 +113,14 @@
 
 ;; ----------------------------------------
 
-;; #:pure is problematic for productions notation: can't tell that the
-;; two pure expressions are "the same"
-#|
 (eprintf "\nExample d5:\n")
+;; Example of test-then-top pattern.
 (define-grammar d5
-  #:start S
-  [S [([m byte] [#t #:pure (zero? m)]) #:> 'none]
-     [([n byte] [#f #:pure (zero? n)] [v byte]) #:> v]])
-(define dg5 (lr-parser #:grammar d5))
+  [S [([m byte] Z [#t #:top]) #:auto]
+     [([n byte] Z [#f #:top] [v byte]) #:auto]]
+  [Z #:context [x]
+     [() (zero? x)]])
+(define dg5 (lr-parser #:grammar d5 #:start S))
 (when PRINT? (send dg5 print))
 
 (define (d5-tokenizer bstr)
@@ -134,4 +133,3 @@
 (define sd5b (bytes 0))
 (send dg5 parse (d5-tokenizer sd5a))
 (send dg5 parse (d5-tokenizer sd5b))
-|#

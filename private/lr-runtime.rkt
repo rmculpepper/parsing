@@ -61,7 +61,7 @@
            (cond [(filter:reject? (token-value* value))
                   (fail 'reduce stack value)]
                  [else
-                  (dprintf "REDUCE: ~v\n" nt value)
+                  (dprintf "REDUCE: ~v\n" value)
                   (goto value stack*)])]))
 
   (define (shift st stack)
