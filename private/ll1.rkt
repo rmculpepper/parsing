@@ -18,7 +18,7 @@
   (define (make-parser-expr g+)
     (define pg (make-LL1 g+))
     (define table (send pg get-table))
-    (define vals-expr (datum->expression (send pg get-vals) (lambda (v) (if (syntax? v) v #f))))
+    (define vals-expr (send pg get-vals))
     #`(make-ll1-parser (quote #,table) #,vals-expr (quote #,g+))))
 
 (define-syntax (ll1-parser stx)

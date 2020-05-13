@@ -21,8 +21,6 @@
              nt-first item-first
              nt-follow)
 
-    (define/public (get-vals) (grammar-vals g))
-
     (define/public (def->entry d)
       (match-define (def nt ctxn rhss) d)
       (define tr

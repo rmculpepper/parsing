@@ -226,6 +226,24 @@
 (send gg11 parse (mktz s11a))
 (send gg11 parse* (mktz s11a))
 
+;; ----------------------------------------
+
+(eprintf "\nExample 12:\n")
+;; Same as 11, but internal def, not module top level
+(define gg12
+  (let ()
+    (define-grammar g12
+      [E [(lparen T rparen) #:auto]]
+      [T [(atom) #:auto]
+         [(T op T) #:auto]
+         [(E) #:auto]])
+    (lr-parser #:grammar g11 #:start E #:implicit-end)))
+(when PRINT? (send gg12 print))
+
+(send gg12 parse (mktz s11a))
+(send gg12 parse* (mktz s11a))
+
+
 ;; ========================================
 ;; Parameters
 

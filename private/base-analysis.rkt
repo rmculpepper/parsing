@@ -16,6 +16,8 @@
            [defs (grammar-defs g)])
     (super-new)
 
+    (define/public (get-vals) (grammar-vals g))
+
     ;; ----------------------------------------
 
     (define/public (generate-corpus n)

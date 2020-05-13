@@ -24,7 +24,7 @@
   (define (make-parser-expr g+ mode)
     (define pg (make-LR g+ mode))
     (define pstates (send pg get-pstates))
-    (define vals-expr (datum->expression (send pg get-vals) (lambda (v) (if (syntax? v) v #f))))
+    (define vals-expr (send pg get-vals))
     #`(make-lr-parser (quote #,pstates) #,vals-expr (quote #,g+) (quote #,mode))))
 
 (define-syntax (lr-parser stx)

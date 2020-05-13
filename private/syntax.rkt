@@ -4,7 +4,7 @@
                      syntax/transformer
                      syntax/free-vars
                      (rename-in syntax/parse [attribute $])
-                     "../util/datum-to-expr.rkt"
+                     macro-debugger/emit
                      "../util/misc.rkt"
                      "grammar-rep.rkt")
          "common.rkt")
@@ -185,7 +185,9 @@
         ((make-variable-like-transformer #`(get-token-value '#,vvar #,tvar)) stx))))
 
   (define (expand/make-user-expr expr venv)
-    (syntax-parse (local-expand (wrap-expr expr venv) 'expression null)
+    ;; All of the extra syntax-local-introduces are to work around a bug or
+    ;; limitation in free-vars; it doesn't work as expected in module pass 1.
+    (syntax-parse (syntax-local-introduce (local-expand (wrap-expr expr venv) 'expression null))
       #:literal-sets (kernel-literals)
       [(#%plain-lambda (tvar ...) body ...)
        (define tvars (syntax->list #'(tvar ...)))
@@ -197,8 +199,9 @@
                  [else h])))
        (values
         (with-syntax ([(used-tvar ...)
-                       (filter (lambda (v) (hash-ref used-tvar-h v #f)) tvars)])
-          #'(#%plain-lambda (used-tvar ...) body ...))
+                       (filter (lambda (v) (hash-ref used-tvar-h v #f)) tvars)]
+                      [#%plain-lambda (syntax-local-introduce #'#%plain-lambda)])
+          (syntax-local-introduce #'(#%plain-lambda (used-tvar ...) body ...)))
         (for/list ([tvar (in-list (reverse tvars))] [i (in-naturals)]
                    #:when (hash-ref used-tvar-h tvar #f))
           i))]))
@@ -223,15 +226,6 @@
       #'(lambda (param-var ... tok-var ...)
           (letrec-syntax (param-binding ... tok-binding ...) expr))))
 
-  (define (parse-grammar stx #:context ctx)
-    (syntax-parse stx
-      #:context ctx
-      [(d:ntdef ...)
-       (define (nt? s) (member s ($ d.nt.ast)))
-       (parameterize ((value-table (make-indexer)))
-         (define defs (map-apply ($ d.mkast) nt?))
-         (grammar defs (indexer->vector (value-table))))]))
-
   (void))
 
 (define (mk-action proc)
@@ -240,21 +234,20 @@
 (define (mk-auto-action nt index)
   (lambda toks (list* nt index (map token-value* (filter token-with-value? toks)))))
 
-(define-syntax Grammar
-  (syntax-parser
-    [(_ part ...)
-     (datum->expression (parse-grammar #'(part ...) #:context this-syntax)
-                        (lambda (v) (cond [(syntax? v) v] [else #f])))]))
-
 ;; ----------------------------------------
-
-(begin-for-syntax
-  (define (parse-grammar* stx)
-    (syntax-parse stx
-      [(_ _ part ...)
-       (parse-grammar #'(part ...) #:context stx)])))
 
 (define-syntax define-grammar
   (syntax-parser
-    [(_ name:id _ ...)
-     #`(define-syntax name (parse-grammar* (quote-syntax #,this-syntax)))]))
+    [(_ name:id d:ntdef ...)
+     (define (nt? s) (member s ($ d.nt.ast)))
+     (define-values (defs vals)
+       (parameterize ((value-table (make-indexer)))
+         (define defs (map-apply ($ d.mkast) nt?))
+         (values defs (indexer->vector (value-table)))))
+     (with-syntax ([(name-vals) (generate-temporaries
+                                 (list (format "~a-vals-" (syntax-e #'name))))]
+                   [(val ...) (vector->list vals)])
+       #`(begin
+           (define name-vals (vector-immutable val ...))
+           (define-syntax name
+             (grammar (quote #,defs) (quote-syntax name-vals)))))]))

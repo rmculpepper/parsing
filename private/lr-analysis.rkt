@@ -87,8 +87,6 @@
     (inherit-field g start end def-h)
     (inherit nt? nt-follow nt-ctxn)
 
-    (define/public (get-vals) (grammar-vals g))
-
     ;; ----------------------------------------
 
     (define nt-lrprods-h
