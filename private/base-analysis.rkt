@@ -183,16 +183,4 @@
               'min-length nt-minlen-h
               'first nt-first-h
               'follow nt-follow-h))
-
-    (define/public (print)
-      (printf "Nullable: ~s\n"
-              (for/list ([(nt n?) (in-hash nt-nullable-h)] #:when n?) nt))
-      (printf "Min length: ~s\n"
-              (for/list ([(nt len) (in-hash nt-minlen-h)]) (list nt len)))
-      (printf "First: ~s\n"
-              (for/list ([(nt fs) (in-hash nt-first-h)])
-                (list nt ': (map telem-t fs))))
-      (printf "Follow: ~s\n"
-              (for/list ([(nt fs) (in-hash nt-follow-h)])
-                (list nt ': (for/list ([f fs]) (if (telem? f) (telem-t f) f))))))
     ))

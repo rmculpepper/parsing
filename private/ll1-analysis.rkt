@@ -67,15 +67,6 @@
     (define/override (get-summary-data)
       (hash-set* (super get-summary-data)
                  'll1-conflicts ll1-conflicts))
-
-    (define/override (print)
-      (super print)
-      (when (pair? ll1-conflicts)
-        (printf "LL1 Conflicts:\n")
-        (pretty-print ll1-conflicts))
-      (when (null? ll1-conflicts)
-        (printf "LL1 Table:\n")
-        (pretty-print ll1-table)))
     ))
 
 (define (make-LL1 g+)

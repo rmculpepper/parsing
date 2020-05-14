@@ -333,44 +333,6 @@
                              (prod->label lrp)))
                  'pstates pstates
                  'conflicts (get-conflicts)))
-
-    (define/override (print)
-      (super print)
-      (when #t
-        (printf "States:\n")
-        ;; (pretty-print state-goto-h)
-        (pretty-print pstates))
-      (when #t
-        (let ([lr0-conflicts (get-lr0-conflicts)])
-          (when #t ;; (pair? lr0-conflicts)
-            (printf "LR(0) Conflicts: ~v\n" lr0-conflicts))))
-      (when #t
-        (let ([conflicts (get-conflicts)])
-          (when #t ;; (pair? conflicts)
-            (printf "~a Conflicts: ~v\n"
-                    (case lookahead-mode
-                      [(lr0) "LR(0)"] [(slr1) "SLR(1)"] [(lalr1) "LALR(1)"] [else "??"])
-                    conflicts)))))
-
-    (define/public (print-states [edges? #t])
-      (for ([st pstates]) (print-state st edges?)))
-    (define/public (print-state st [edges? #t])
-      (match-define (pstate i label tr shift reduce goto reduce-lookahead) st)
-      (printf "State ~s: ~s\n" i label)
-      (when edges?
-        (for ([(t next-st) (in-hash shift)])
-          (printf "  ~s -> shift ~s\n" t next-st))
-        (cond [(hash? reduce-lookahead)
-               (for ([(la red) (in-hash reduce-lookahead)])
-                 (match-define (list* nt index _) red)
-                 (printf "  lookahead ~s -> reduce ~s (~s)\n" la nt index))]
-              [else
-               (for ([red (in-list reduce)])
-                 (match-define (list* nt index _) red)
-                 (printf "  -> reduce ~s (~s)\n" nt index))])
-        (for ([(nt next-st) (in-hash goto)])
-          (printf "  ~s -> goto ~s\n" nt next-st))
-        #;(printf "\n")))
     ))
 
 (define (make-LR g+ mode) (new LR% (g+ (lr-adjust-grammar g+)) (lookahead-mode mode)))
