@@ -22,18 +22,21 @@
            (loop h (cdr worklist))]
           [else
            (define children (get-children (car worklist)))
-           (loop (hash-set h (car worklist) (store-fun children))
-                 (append (worklist-fun children) (cdr worklist)))])))
+           (let* ([h (hash-set h (car worklist) (store-fun children))]
+                  [h (loop h (worklist-fun children))])
+             (loop h (cdr worklist)))])))
 
 (define (list-closure worklist get-children)
-  (let loop ([acc null] [worklist worklist] [h (hash)])
-    (cond [(null? worklist) (reverse acc)]
-          [(hash-ref h (car worklist) #f) (loop acc (cdr worklist) h)]
-          [else
-           (define children (get-children (car worklist)))
-           (loop (cons (car worklist) acc)
-                 (append children (cdr worklist))
-                 (hash-set h (car worklist) #t))])))
+  (define h (make-hash))
+  (reverse
+   (let loop ([acc null] [worklist worklist])
+     (cond [(null? worklist) acc]
+           [(hash-ref h (car worklist) #f) (loop acc (cdr worklist))]
+           [else
+            (define children (get-children (car worklist)))
+            (hash-set! h (car worklist) #t)
+            (let ([acc (loop (cons (car worklist) acc) children)])
+              (loop acc (cdr worklist)))]))))
 
 ;; ----------------------------------------
 
