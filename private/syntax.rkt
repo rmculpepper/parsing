@@ -4,7 +4,7 @@
                      syntax/transformer
                      syntax/free-vars
                      (rename-in syntax/parse [attribute $])
-                     "../util/misc.rkt"
+                     "util.rkt"
                      "grammar-rep.rkt")
          "common.rkt")
 (provide (all-defined-out) (for-syntax (all-defined-out)))

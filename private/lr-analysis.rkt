@@ -4,7 +4,7 @@
          racket/list
          racket/set
          racket/pretty
-         "../util/misc.rkt"
+         "util.rkt"
          "grammar-rep.rkt"
          "base-analysis.rkt"
          "lr-common.rkt")

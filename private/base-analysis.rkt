@@ -3,7 +3,7 @@
          racket/class
          racket/list
          racket/set
-         "../util/misc.rkt"
+         "util.rkt"
          "grammar-rep.rkt")
 (provide (all-defined-out))
 
