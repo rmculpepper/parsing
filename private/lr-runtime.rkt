@@ -58,7 +58,7 @@
            (define-values (stack* args all-args) (pop/peek-values arity ctxn stack))
            (define value (make-nt-token nt (apply (get-val action) all-args) args))
            (cond [(filter:reject? (token-value* value))
-                  (fail 'reduce stack value)]
+                  (fail 'reduce stack* value)]
                  [else
                   (dprintf "REDUCE: ~v\n" value)
                   (goto value stack*)])]))
