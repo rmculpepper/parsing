@@ -1,4 +1,6 @@
 #lang racket/base
+(require racket/match
+         "common.rkt")
 (provide (all-defined-out))
 
 ;; PState = (pstate StIndex Label TR Shifts Reduces Gotos Lookahead)
@@ -77,3 +79,15 @@
 
 (define (convert-pretty-states v)
   (if (pstate? v) (pretty-state (pstate-index v) (pstate-label v)) v))
+
+(struct lr-context (op vsk)
+  #:methods gen:context
+  [(define (context->stack self)
+     (define (convert v)
+       (if (pstate? v) (pretty-state (pstate-index v) (pstate-label v)) v))
+     (map convert (lr-context-vsk self)))
+   (define (context->stacks self)
+     (list (context->stack self)))
+   (define (context->expected-terminals self)
+     (match-define (lr-context op (list* v1 s2 _)) self)
+     (if (eq? op 'top) #f (hash-keys (pstate-shift s2))))])
