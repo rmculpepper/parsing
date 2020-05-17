@@ -205,11 +205,15 @@
                ;; No reductions => no lookahead needed
                (define tr (consistent-tr (filter telem? (hash-keys (state-edges st)))))
                (values tr #f)]
-              [(and (hash-empty? shift) (<= (length reduce) 1))
-               ;; No shift, at most one reduction => no lookahead needed
+              [(and (hash-empty? shift) (= (length reduce) 1)
+                    (not (and end (eq? (reduction-nt (car reduce)) start))))
+               ;; No shift, at most one reduction => no lookahead needed, usually,
+               ;; BUT cannot omit lookahead if it is the (new) Start NT and we need
+               ;; to check that it is followed by one of the end terminals.
                (values #f #f)]
               [else
-               ;; Non-empty shift AND at least one reduction, OR multiple reductions.
+               ;; Non-empty shift AND at least one reduction, OR multiple reductions,
+               ;; OR one reduction of (new) Start NT requiring final lookahead.
                (define lookahead/e (get-lookahead st reduce))
                (define tr
                  (consistent-tr
