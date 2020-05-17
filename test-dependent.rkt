@@ -34,7 +34,10 @@
        [else (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) (token 'EOF))]))))
 
 (send dg1 parse (d1-tokenizer sd1a))
+(send dg1 parse* (d1-tokenizer sd1a))
+
 (send dg1 parse (d1-tokenizer sd1b))
+(send dg1 parse* (d1-tokenizer sd1b))
 
 ;; ----------------------------------------
 
@@ -55,6 +58,7 @@
 
 (define sd2a "hello world how are you today")
 (send dg2 parse (d2-tokenizer sd2a))
+(send dg2 parse* (d2-tokenizer sd2a))
 
 ;; ----------------------------------------
 
@@ -76,6 +80,7 @@
 
 (define sd3a "h=hello;w=world;m=;g=how are you today")
 (send dg3 parse (d3-tokenizer sd3a))
+(send dg3 parse* (d3-tokenizer sd3a))
 
 ;; ?? Maybe allow configurable default TokenReaders,
 ;; eg #:token-kind ([(#\space) char]) or #:token-kind ([char char])
@@ -131,5 +136,9 @@
 
 (define sd5a (bytes 1 42))
 (define sd5b (bytes 0))
+
 (send dg5 parse (d5-tokenizer sd5a))
+(send dg5 parse* (d5-tokenizer sd5a))
+
 (send dg5 parse (d5-tokenizer sd5b))
+(send dg5 parse* (d5-tokenizer sd5b))

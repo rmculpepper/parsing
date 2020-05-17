@@ -43,22 +43,40 @@
 
 (define (singleton? x) (and (pair? x) (null? (cdr x))))
 
-;; stacks-consistent-tr : (Listof StStack) -> TR
+;; stacks-consistent-tr : (Listof StStack) -> TRValue
+;; where TRValue is Symbol | (cons Symbol List)
 ;; FIXME: in GLR, if token arguments, *values* must be consistent, not just exprs
 ;; For now, just disallow parameters.
-(define (stacks-consistent-tr sks)
-  (define (safe-tr? x) (match x [(? symbol?) #t] [_ #f]))
-  (match sks
-    #;[(list sk) (pstate-tr (car sk))] ;; unsound: if params, rest of stack may be tjoin
-    [sks
-     (for/fold ([seen-tr #f]) ([sk (in-list sks)])
-       (define tr (pstate-tr (car sk)))
-       (cond [(or (equal? tr seen-tr) (eq? tr #f)) seen-tr]
-             [(safe-tr? tr)
-              (cond [(or (eq? seen-tr #f) (equal? seen-tr tr)) tr]
-                    [else (error 'glr-parse "ambiguous token reader\n  candidates: ~e"
-                                 (remove-duplicates (map pstate-tr (map car sks))))])]
-             [else (error 'glr-parse "unsupported token reader\n  reader: ~e" tr)]))]))
+(define (stacks-consistent-tr sks get-val)
+  ;; Note: a single state might have multiple values due to tjoin
+  (define seen-tr #f)
+  (define (bad tr)
+    (error 'glr-parse "ambiguous token reader\n  candidates: ~e, ~e (maybe others)"
+           seen-tr tr))
+  (for ([sk (in-list sks)])
+    (match (pstate-tr (car sk))
+      [#f (void)]
+      [(? symbol? tr)
+       (cond [(not seen-tr) (set! seen-tr tr)]
+             [(eqv? tr seen-tr) (void)]
+             [else (bad tr)])]
+      [(cons tr-name (expr:user fun-index args))
+       (define (do-tr tr)
+         (cond [(not seen-tr) (set! seen-tr tr)]
+               [(and (list? seen-tr) (andmap eqv? tr seen-tr)) (void)]
+               [else (bad tr)]))
+       (define (argsloop args sk depth acc)
+         (cond [(null? args)
+                (do-tr (cons tr-name (apply (get-val fun-index) (reverse acc))))]
+               [else
+                (with-tstack sk [_s v sk**]
+                  (cond [(< depth (car args))
+                         (argsloop args sk** (add1 depth) acc)]
+                        [(= depth (car args))
+                         (argsloop (cdr args) sk** (add1 depth) (cons v acc))]
+                        [else (error 'stacks-consistent-tr "internal error: out of order")]))]))
+       (argsloop args sk 0 null)]))
+  (or seen-tr 'default))
 
 ;; ============================================================
 
@@ -107,10 +125,9 @@
   (define (get-val n) (if (eq? n 'accept) values (vector-ref vals n)))
 
   (define (get-next-token tr)
-    ;; FIXME: for now, just support no-argument token-readers
     (match tr
       [(? symbol? tk) (tz #f tk null)]
-      [_ (error 'glr-parse "unsupported token reader: ~e" tr)]))
+      [(cons tf args) (tz #f tf args)]))
 
   (define failed null) ;; mutated; (Listof (U VStack (box VStack))) -- box means #:top failed
   (define ready null) ;; mutated; (Listof StStack); ready to look at next token
@@ -163,7 +180,7 @@
                      [else (goto value sk** next-tok)])))]))
 
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
-    (define tr (stacks-consistent-tr sks))
+    (define tr (stacks-consistent-tr sks get-val))
     (define next-tok (get-next-token tr))
     (dprintf "LOOK: read ~v\nSTATES: ~v\n\n"
              next-tok (map pstate-index (map car sks)))

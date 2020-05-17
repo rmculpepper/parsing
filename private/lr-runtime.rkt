@@ -28,11 +28,8 @@
     (apply (get-val (expr:user-fun ue))
            (get-token-args (expr:user-args ue) stack)))
   (define (get-token-args args stack)
-    (for/list ([arg (in-list args)])
-      (match arg
-        ;;[(list datum) datum] ;; convert to token?
-        [(? exact-nonnegative-integer? index)
-         (list-ref stack (+ index index 1))])))
+    (for/list ([vi (in-list args)])
+      (list-ref stack (+ vi vi 1))))
 
   (define (loop stack)
     (loop* (car stack) stack))
