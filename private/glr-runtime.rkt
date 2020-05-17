@@ -117,7 +117,7 @@
 
 ;; ----------------------------------------
 
-(define (glr-parse states vals tz #:mode [mode 'complete])
+(define (glr-parse states vals tz #:mode [mode 'shortest]) ;; mode : (U 'shortest 'all)
   (define DEBUG? #f)
   (define KEEP-FAIL? #t)
   (define-syntax-rule (dprintf fmt arg ...) (when DEBUG? (eprintf fmt arg ...)))
@@ -218,13 +218,13 @@
     (dprintf "\n==== STEP ====\n")
     (define ready* (tjoin-on-cdrs ready))
     (set! ready null)
-    (when #t (set! failed null))
+    (set! failed null)
     (look ready*))
 
   (run-until-look* (get-state 0) null #f)
   (dprintf "\n==== START STEPPING ====\n")
   (let loop ()
-    (cond [(and (memq mode '(first-done)) (pair? done)) done]
+    (cond [(and (memq mode '(shortest)) (pair? done)) done]
           [(null? ready) (if (pair? done) done (parse-error 'glr-parser (glr-context failed)))]
           [else (run-all-ready) (loop)])))
 
