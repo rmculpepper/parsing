@@ -231,7 +231,6 @@
 
 (define tr
   (make-token-reader
-   #:location-mode 'location
    #rx#"[a-zA-Z][a-zA-Z0-9]*"
    (lambda (lexeme start end) (token 'identifier lexeme))
    #rx"[0-9]+"
