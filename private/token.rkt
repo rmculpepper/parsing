@@ -11,13 +11,14 @@
          token-value
          token-value*
          token-start
-         token-end)
+         token-end
+         token-add-locations)
 
 ;; A TokenValue is one of
 ;; - safe-terminal
 ;; - (token Terminal (U Any no-value) StartLoc/#f EndLoc/#f)
 ;; {Start,End}Loc = any non-false value, eg Nat (don't have to be the same types!)
-(struct tk (t v start end) #:prefab #:reflection-name 'token)
+(struct tk (t v s e) #:prefab #:reflection-name 'token)
 
 (define no-value (string->uninterned-symbol "∅"))
 
@@ -67,6 +68,11 @@
   (match x [(tk _ _ s e) s] [_ #f]))
 (define (token-end x)
   (match x [(tk _ _ s e) e] [_ #f]))
+
+(define (token-add-locations x s e)
+  (match x
+    [(tk t v s0 e0) (if (or s0 e0) x (tk t v s e))]
+    [(? safe-terminal? t) (tk t no-value s e)]))
 
 (define-match-expander -token
   (lambda (stx)
