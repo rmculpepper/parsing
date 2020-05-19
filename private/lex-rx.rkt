@@ -23,10 +23,18 @@
 ;; Note: second result can be greater than token length, if previous results
 ;; were skipped.
 
+(define default-location-mode (make-parameter 'location))
+
 ;; make-token-reader : { Regexp ActionFun }* -> TokenReader
-(define (make-token-reader #:location-mode [locmode 'location] . rx+action-list)
+(define (make-token-reader #:location-mode [locmode (default-location-mode)]
+                           #:handle-eof? [handle-eof? #t]
+                           . rx+action-list)
   (define table (make-lexer-table 'make-token-reader rx+action-list))
-  (define (token-reader in [args null]) (get-token table in locmode 0 #f))
+  (define (token-reader in [args null])
+    (if (and handle-eof? (eof-object? (peek-byte in)))
+        (let ([loc (get-location locmode in)])
+          (values (token/no-value 'EOF loc loc) 0))
+        (get-token table in locmode 0 #f)))
   token-reader)
 
 ;; LexerTable = (cons (Vectorof Regexp) (Vectorof ActionFun))
@@ -46,14 +54,17 @@
        (cons (list->vector (reverse acc-rxs)) (list->vector (reverse acc-actions)))])))
 
 (define (convert-rx who rx)
-  (define (convert-rep rep k)
+  (define (convert-rep rep rebuild)
     (cond [(string? rep)
-           (if (regexp-match? #rx"^\\^" rep) rx (k (string-append "^" rep)))]
+           (if (regexp-match? #rx"^\\^" rep) rx (rebuild (string-append "^" rep)))]
           [(bytes? rep)
-           (if (regexp-match? #rx#"^\\^" rep) rx (k (bytes-append #"^" rep)))]))
-  (cond [(pregexp? rx) (convert-rep (object-name rx) pregexp)]
-        [(regexp? rx) (convert-rep (object-name rx) regexp)]
-        [else (raise-argument-error who "regexp?" rx)]))
+           (if (regexp-match? #rx#"^\\^" rep) rx (rebuild (bytes-append #"^" rep)))]))
+  (convert-rep (object-name rx)
+               (cond [(pregexp? rx) pregexp]
+                     [(regexp? rx) regexp]
+                     [(byte-pregexp? rx) byte-pregexp]
+                     [(byte-regexp? rx) byte-regexp]
+                     [else (raise-argument-error who "regexp?" rx)])))
 
 ;; get-token : ... -> (values Token Nat)
 (define (get-token table in locmode [peek?/skip #f] [start-loc #f])
@@ -61,14 +72,16 @@
   ;; Note: if peeking w/ skip, then start-loc should be correct for given skip.
   (define start (or start-loc (get-location locmode in)))
   (define skip (or peek?/skip 0))
-  (define-values (action len-in-bytes) (table-peek-match table in skip))
-  (unless action (error 'get-token "failed\n  location: ~e" start))
+  (define-values (index len-in-bytes) (peek-match (car table) in skip))
+  (unless index (error 'get-token "failed\n  location: ~e" start))
+  (define bytes-lexeme
+    (cond [peek?/skip (peek-bytes len-in-bytes peek?/skip in)]
+          [else (read-bytes len-in-bytes in)]))
   (define lexeme
-    (bytes->string/utf-8
-     (cond [peek?/skip (peek-bytes len-in-bytes peek?/skip in)]
-           [else (read-bytes len-in-bytes in)])))
-  (define end (get-end-location+ locmode in start len-in-bytes lexeme))
-  (match (action lexeme start end)
+    (cond [(byte-regexp? (vector-ref (car table) index)) bytes-lexeme]
+          [else (bytes->string/utf-8 bytes-lexeme)]))
+  (define end (get-end-location locmode in start len-in-bytes lexeme))
+  (match ((vector-ref (cdr table) index) lexeme start end)
     [(? token? tok)
      (values (token-add-locations tok start end) (+ skip len-in-bytes))]
     [(list result) ;; return as is
@@ -80,10 +93,10 @@
     [bad (error 'get-token "bad result from ~a action\n  result: ~e"
                 'make-token-reader bad)]))
 
-(define (table-peek-match table in [skip 0])
+(define (peek-match rxv in [skip 0])
   (define-values (best-index best-end)
     (for/fold ([best-index #f] [best-end -1])
-              ([index (in-naturals)] [rx (in-vector (car table))])
+              ([index (in-naturals)] [rx (in-vector rxv)])
       (match (regexp-match-peek-positions rx in skip)
         [(cons (cons start end) _) ;; start = skip
          (if (> end best-end)
@@ -91,9 +104,7 @@
              (values best-index best-end))]
         [#f
          (values best-index best-end)])))
-  (if best-index
-      (values (vector-ref (cdr table) best-index) (- best-end skip))
-      (values #f #f)))
+  (values best-index (and best-index (- best-end skip))))
 
 ;; ----------------------------------------
 
@@ -118,23 +129,22 @@
      (srcloc (object-name in) line col pos #f)]
     [else #f]))
 
-(define newline-rx #rx"\r\n|\r|\n")
-
-(define (get-end-location+ locmode in start len-in-bytes lexeme)
+(define (get-end-location locmode in start len-in-bytes lexeme)
   (case locmode
     [(location)
      (match-define (location start-line start-col start-pos) start)
      (define-values (end-line end-col end-pos)
        (update-line-col-pos start-line start-col start-pos lexeme))
      (location end-line end-col end-pos)]
-    [else (get-end-location locmode in start len-in-bytes (string-length lexeme))]))
-
-(define (get-end-location locmode in start len-in-bytes len-in-chars)
-  (case locmode
     [(position) ;; may be peeking, so can't use file-position
      (and len-in-bytes (+ start len-in-bytes))]
     [(srcloc)
      (match-define (srcloc src line col pos _) start)
+     (define len-in-chars
+       (cond [(string? lexeme) (string-length lexeme)]
+             [(bytes? lexeme) (bytes-utf-8-length lexeme #\?)]
+             [(char? lexeme) (char-utf-8-length lexeme)]
+             [else #f]))
      (srcloc src line col pos len-in-chars)]
     [else #f]))
 
@@ -148,23 +158,63 @@
     [else end]))
 
 (define (update-line-col-pos line col pos lexeme)
-  (define len (string-length lexeme))
-  (match (and (regexp-match? newline-rx lexeme)
-              (regexp-match-positions* #rx"\r\n|\r|\n" lexeme))
-    [#f (values line (+m col len) (+m pos len))]
-    [(? list? m) (values (+m line (length m)) (+m col (- len (cdr (last m)))) (+m pos len))]))
-
-(define (+m x y) (and x (+ x y)))
+  ;; FIXME: "\t" not handled like Racket port-count-lines!
+  (define (go newline-rx len get-col)
+    (match (and (regexp-match? newline-rx lexeme)
+                (regexp-match-positions* newline-rx lexeme))
+      [#f (values line (and col (+ col len)) (and pos (+ pos len)))]
+      [(? list? m)
+       (values (and line (+ line (length m)))
+               (and col (get-col (cdr (last m))))
+               (and pos (+ pos len)))]))
+  (cond [(string? lexeme)
+         (define len (string-length lexeme))
+         (go #rx"\r\n|\r|\n" len (lambda (last-nl) (- len last-nl)))]
+        [(bytes? lexeme)
+         (go #rx#"\r\n|\r|\n"
+             (bytes-utf-8-length lexeme #\?)
+             (lambda (last-nl) (bytes-utf-8-length lexeme #\? last-nl)))]
+        [(char? lexeme)
+         (define len (char-utf-8-length lexeme))
+         (case lexeme
+           ;; FIXME: This doesn't account for reading \r\n as separate chars
+           [(#\newline #\return) (values (and line (add1 line)) 0 (and pos (add1 pos)))]
+           [else (values line (and col (add1 col)) (and pos (add1 pos)))])]
+        [else (values #f #f #f)]))
 
 ;; ============================================================
 
-(define (make-tokenizer in readers)
-  (define default-reader (hash-ref readers 'default #f))
+(define (peekX-token-reader terminals locmode peek-x get-x-len get-x-lexeme other-t)
+  (lambda (in args)
+    (define start (get-location locmode in))
+    (define next (peek-x in))
+    (cond [(eof-object? next)
+           (define end (get-end-location locmode in start 0 #f))
+           (values (token/no-value 'EOF start end) 0)]
+          [else
+           (define len-in-bytes (get-x-len next))
+           (define end (get-end-location locmode in start len-in-bytes (get-x-lexeme next)))
+           (values (if (member next terminals)
+                       (token/no-value next start end)
+                       (token other-t next start end))
+                   len-in-bytes)])))
+
+(define (char-token-reader terminals
+                           #:location-mode [locmode (default-location-mode)])
+  (peekX-token-reader terminals locmode peek-char char-utf-8-length values 'char))
+
+(define (byte-token-reader terminals
+                           #:location-mode [locmode (default-location-mode)])
+  (peekX-token-reader terminals locmode peek-byte (lambda (x) 1) integer->char 'byte))
+
+;; ============================================================
+
+(define (make-tokenizer in default-reader [readers #hasheq()])
   (define last-peek-amt 0)
   (define (get-token tf args)
     (commit-last)
     (define reader
-      (cond [(and (eq? tf 'default) default-reader) default-reader]
+      (cond [(eq? tf 'default) default-reader]
             [(hash-ref readers tf #f) => values]
             [else (error 'tokenizer:get-token "no reader\n  name: ~e" tf)]))
     (define-values (tok peek-amt) (reader in args))
@@ -182,36 +232,42 @@
 (define tr
   (make-token-reader
    #:location-mode 'location
-   #rx"[a-zA-Z][a-zA-Z0-9]*"
+   #rx#"[a-zA-Z][a-zA-Z0-9]*"
    (lambda (lexeme start end) (token 'identifier lexeme))
    #rx"[0-9]+"
    (lambda (lexeme start end) (token 'number (string->number lexeme)))
    #rx"[ \t\n\r]+"
    (lambda _ '#f)
    #rx"\"(?:[^\"]|[\\\\][\"])*\""
-   (lambda (lexeme start end) (token 'string lexeme))
-   #rx"^$"
-   (lambda _ 'EOF)))
+   (lambda (lexeme start end)
+     (token 'string (regexp-replace* #rx"[\\\\][\"]"
+                                     (substring lexeme 1 (sub1 (string-length lexeme)))
+                                     "\"")))
+   #rx"[#]"
+   (lambda (lexeme start end) 'char-next)))
 
 (define (tokenizer-read-all tz)
   (match-define (tokenizer get-token commit-last _) tz)
-  (let loop ()
-    (eprintf ">>> ")
-    (define tok (get-token 'default null))
-    (eprintf "~e\n" tok)
-    (cons tok (if (eq? (token-name tok) 'EOF) null (loop)))))
-
-(define (read-all-tokens tr s)
-  (define in (open-input-string s))
-  (port-count-lines! in)
-  (let loop ()
-    (eprintf ">>> ")
-    (define-values (tok nbytes) (tr in null))
-    (eprintf "~e\n" tok)
-    (void (read-bytes nbytes in))
-    (cons tok (if (eq? (token-name tok) 'EOF) null (loop)))))
+  (let loop ([tr 'default])
+    (define tok (get-token tr null))
+    (cons tok
+          (case (token-name tok)
+            [(EOF) null]
+            [(char-next) (loop 'char)]
+            [else (loop 'default)]))))
 
 (define s #<<EOF
 abc 23 0 i18n "hello world!"
+def #A #.
 EOF
 )
+
+(define (open-s [count-lines? #t])
+  (define in (open-input-string s))
+  (when count-lines? (port-count-lines! in))
+  in)
+
+(define (make-s-tz [count-lines? #t])
+  (make-tokenizer (open-s count-lines?)
+                  tr
+                  (hasheq 'char (char-token-reader '(#\.)))))
