@@ -200,23 +200,35 @@
                    len-in-bytes)])))
 
 (define (char-token-reader terminals
+                           #:other-token-name [other-tname 'char]
                            #:location-mode [locmode (default-location-mode)])
-  (peekX-token-reader terminals locmode peek-char char-utf-8-length values 'char))
+  (peekX-token-reader terminals locmode peek-char char-utf-8-length values other-tname))
 
 (define (byte-token-reader terminals
+                           #:other-token-name [other-tname 'byte]
                            #:location-mode [locmode (default-location-mode)])
-  (peekX-token-reader terminals locmode peek-byte (lambda (x) 1) integer->char 'byte))
+  (peekX-token-reader terminals locmode peek-byte (lambda (x) 1) integer->char other-tname))
 
 ;; ============================================================
 
-(define (make-tokenizer in default-reader [readers #hasheq()])
+;; FIXME:
+;; Lexer = InputSource -> Tokenizer
+
+(define ((make-lexer default-reader [readers #hasheq()]) src)
+  (make-tokenizer src default-reader readers))
+
+(define (make-tokenizer src default-reader [readers #hasheq()])
+  (define in
+    (cond [(input-port? src) src]
+          [(string? src) (let ([in (open-input-string src)]) (port-count-lines! in) in)]
+          [(bytes? src) (let ([in (open-input-bytes src)]) (port-count-lines! in) in)]))
   (define last-peek-amt 0)
   (define (get-token tf args)
     (commit-last)
     (define reader
       (cond [(eq? tf 'default) default-reader]
             [(hash-ref readers tf #f) => values]
-            [else (error 'tokenizer:get-token "no reader\n  name: ~e" tf)]))
+            [else (error 'make-tokenizer:get-token "no reader\n  name: ~e" tf)]))
     (define-values (tok peek-amt) (reader in args))
     (set! last-peek-amt peek-amt)
     tok)
@@ -224,7 +236,7 @@
     (when (> last-peek-amt 0)
       (void (read-bytes last-peek-amt in))
       (set! last-peek-amt 0)))
-  (tokenizer get-token commit-last #f))
+  (tokenizer get-token commit-last))
 
 
 ;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -246,7 +258,7 @@
    (lambda (lexeme start end) 'char-next)))
 
 (define (tokenizer-read-all tz)
-  (match-define (tokenizer get-token commit-last _) tz)
+  (match-define (tokenizer get-token commit-last) tz)
   (let loop ([tr 'default])
     (define tok (get-token tr null))
     (cons tok

@@ -2,27 +2,22 @@
 (require racket/class
          racket/match
          "main.rkt"
-         "private/common.rkt")
+         "private/common.rkt"
+         "private/lex-rx.rkt")
 (provide (all-defined-out)
          (all-from-out "main.rkt"))
 
-(define PRINT? #f)
+(define (words-token-reader words)
+  (apply make-token-reader
+         #rx"[ \t\r\n]+" (lambda (l s e) #f)
+         (let loop ([words words])
+           (cond [(null? words) null]
+                 [else (list* (regexp (regexp-quote (format "~a" (car words))))
+                              (lambda (l s e) (token (car words) (car words)))
+                              (loop (cdr words)))]))))
 
-(module util racket/base
-  (require racket/match "main.rkt")
-  (provide (all-defined-out))
-
-  (define (make-toks vs)
-    (for/list ([v (in-list vs)] [i (in-naturals)])
-      (match v [(list t) (token t t i i)] [(list t v) (token t v i i)])))
-
-  (define (mktz vs)
-    (define toks (make-toks vs))
-    (define (get-token _k _a)
-      (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) (token 'EOF)))
-    (tokenizer get-token void)))
-
-(require 'util)
+(define (words-lexer words)
+  (make-lexer (words-token-reader words)))
 
 ;; ============================================================
 
@@ -38,11 +33,11 @@
   [MaybeObj [() null]
             [(Nphr) #:> $1]])
 (define gg1 (lr-parser #:grammar g1 #:start Sent))
-(when PRINT? (send gg1 print))
 
-(define s1a '((adj) (adj) (noun) (verb) (adj) (noun) (conj) (noun) (adv) (verb)))
-(send gg1 parse (mktz s1a))
-(send gg1 parse* (mktz s1a))
+(define lex1 (words-lexer '(conj noun adj verb adv)))
+(define ts1a "adj adj noun verb adj noun conj noun adv verb")
+(send gg1 parse (lex1 ts1a))
+(send gg1 parse* (lex1 ts1a))
 
 ;; --------------------
 
@@ -52,15 +47,25 @@
   [Expr [(atom) #:> $1]
         [(lparen Expr op Expr rparen) (list $2 $3 $4)]])
 (define gg2 (lr-parser #:grammar g2 #:start Expr #:implicit-end))
-(when PRINT? (send gg2 print))
-
 (define lg2 (ll1-parser #:grammar g2 #:start Expr #:implicit-end))
-(when PRINT? (send lg2 print))
 
-(define s2a '((lparen) (atom 5) (op +) (atom 6) (rparen)))
-(send gg2 parse (mktz s2a))
-(send gg2 parse* (mktz s2a))
-(send lg2 parse (mktz s2a))
+(define lex2
+  (make-lexer
+   (make-token-reader
+    #rx"\\(" (lambda (l s e) 'lparen)
+    #rx"\\)" (lambda (l s e) 'rparen)
+    #rx"[0-9]+" (lambda (l s e) (token 'atom (string->number l)))
+    #rx"[+*]" (lambda (l s e) (token 'op (string->symbol l)))
+    #rx"[ \t\r\n]+" (lambda (l s e) #f))))
+
+(define ts2a "(5 + 6)")
+(send gg2 parse (lex2 ts2a))
+(send gg2 parse* (lex2 ts2a))
+(send lg2 parse (lex2 ts2a))
+
+;; Example for error reporting:
+;;(define ts2b "(5 + 6*7)")
+;;(send gg2 parse* (lex2 ts2b))
 
 ;; --------------------
 
@@ -71,11 +76,11 @@
      [(y Y) #:auto]]
   [Z [(y) #:auto]])
 (define gg3 (lr-parser #:grammar g3 #:start A))
-(when PRINT? (send gg3 print))
 
-(define s3a '((x) (y) (y) (y) (y)))
+(define lex3 (words-lexer '(x y)))
+(define ts3a "xyyyy")
 (printf "-- LR(1) conflict\n") ;; skip parse
-(send gg3 parse* (mktz s3a))
+(send gg3 parse* (lex3 ts3a))
 
 ;; --------------------
 
@@ -85,25 +90,33 @@
   [A [(a) #:auto]
      [(A b) #:auto]])
 (define gg4 (lr-parser #:grammar g4 #:start A))
-(when PRINT? (send gg4 print))
 
-(define s4a '((a) (b) (b) (b)))
-(send gg4 parse (mktz s4a))
-(send gg4 parse* (mktz s4a))
+(define lex4 (words-lexer '(a b)))
+(define ts4a "abbb")
+(send gg4 parse (lex4 ts4a))
+(send gg4 parse* (lex4 ts4a))
 
 ;; --------------------
 
 (eprintf "\nExample 5:\n")
 ;; Example with LR0 (and LR1?) shift/reduce conflict
 (define-grammar g5
-  [E [(a) #:> $1]
+  [E [(atom) #:> $1]
      [(E op E) #:> (list $1 $2 $3)]])
 (define gg5 (lr-parser #:grammar g5 #:start E))
-(when PRINT? (send gg5 print))
 
-(define s5a '((a) (op) (a) (op) (a)))
-(send gg5 parse (mktz s5a))
-(send gg5 parse* (mktz s5a))
+(define lex5
+  (make-lexer
+   (make-token-reader
+    #rx"\\(" (lambda (l s e) 'lparen)
+    #rx"\\)" (lambda (l s e) 'rparen)
+    #rx"[0-9]+" (lambda (l s e) (token 'atom (string->number l)))
+    #rx"[+*]" (lambda (l s e) (token 'op (string->symbol l)))
+    #rx"[ \t\r\n]+" (lambda (l s e) #f))))
+
+(define ts5a "1 + 2 *3")
+(send gg5 parse (lex5 ts5a))
+(send gg5 parse* (lex5 ts5a))
 
 ;; --------------------
 
@@ -115,11 +128,11 @@
   [B [(a) #:auto]]
   [C [(a) #:auto]])
 (define gg6 (lr-parser #:grammar g6 #:start A #:implicit-end))
-(when PRINT? (send gg6 print))
 
-(define s6a '((a) (y)))
-(send gg6 parse (mktz s6a))
-(send gg6 parse* (mktz s6a))
+(define lex6 (words-lexer '(a y)))
+(define ts6a "ay")
+(send gg6 parse (lex6 ts6a))
+(send gg6 parse* (lex6 ts6a))
 
 ;; --------------------
 
@@ -127,16 +140,17 @@
 ;; LALR(1) but not LR(0)
 (define-grammar g7
   [S [(E) #:auto]]
-  [E [(E minus T) #:auto]
+  [E [(E op T) #:auto]
      [(T) #:auto]]
-  [T [(number) #:auto]
+  [T [(atom) #:auto]
      [(lparen E rparen) #:auto]])
 (define gg7 (lr-parser #:grammar g7 #:start S))
-(when PRINT? (send gg7 print))
 
-(define s7a '((number 5) (minus) (number 2) (minus) (number 1)))
-(send gg7 parse (mktz s7a))
-(send gg7 parse* (mktz s7a))
+(define lex7 lex5)
+
+(define ts7a "5 + 2 * 1")
+(send gg7 parse (lex7 ts7a))
+(send gg7 parse* (lex7 ts7a))
 
 ;; --------------------
 
@@ -148,11 +162,11 @@
   [A [(x) #:auto]]
   [B [(x) #:auto]])
 (define gg8 (lr-parser #:grammar g8 #:start S))
-(when PRINT? (send gg8 print))
 
-(define s8a '((x) (a) (x) (b)))
-(send gg8 parse (mktz s8a))
-(send gg8 parse* (mktz s8a))
+(define lex8 (words-lexer '(x a b)))
+(define ts8a "xaxb")
+(send gg8 parse (lex8 ts8a))
+(send gg8 parse* (lex8 ts8a))
 
 ;; --------------------
 
@@ -165,50 +179,20 @@
      [(b d a) #:auto]]
   [A [(d) #:auto]])
 (define gg9 (lr-parser #:grammar g9 #:start S))
-(when PRINT? (send gg9 print))
 
-(define s9a '((d) (c)))
-(define s9b '((b) (d) (a)))
+(define lex9 (words-lexer '(a b c d)))
+(define ts9a "dc")
+(define ts9b "bda")
 
-(send gg9 parse (mktz s9a))
-(send gg9 parse* (mktz s9a))
+(send gg9 parse (lex9 ts9a))
+(send gg9 parse* (lex9 ts9a))
 
-(send gg9 parse (mktz s9b))
-(send gg9 parse* (mktz s9b))
+(send gg9 parse (lex9 ts9b))
+(send gg9 parse* (lex9 ts9b))
 
 ;; --------------------
 
-(eprintf "\nExample 10:\n")
-;; Example of LL(1) grammar that is not LALR(1)!
-;; Ref: https://stackoverflow.com/questions/6487588/#6492798
-(define-grammar g10
-  [S [(lparen X) #:auto]
-     [(E rbracket) #:auto]
-     [(F rparen) #:auto]]
-  [X [(E rparen) #:auto]
-     [(F rbracket) #:auto]]
-  [E [(A) #:auto]]
-  [F [(A) #:auto]]
-  [A [() #:auto]])
-(define gg10 (lr-parser #:grammar g10 #:start S))
-(when PRINT? (send gg10 print))
-
-(define lg10 (ll1-parser #:grammar g10 #:start S))
-(when PRINT? (send lg10 print))
-
-(define s10a '((lparen) (rparen)))
-(define s10b '((rparen) (rbracket))) ;; -- BAD, contains extra token!
-(define s10c '((rparen)))
-
-(printf "-- not LALR(1)\n") ;; skip parse
-(send lg10 parse (mktz s10a))
-(send gg10 parse* (mktz s10a))
-
-(send lg10 parse (mktz s10b))
-;;(send gg10 parse* (mktz s10b))
-
-(send lg10 parse (mktz s10c))
-(send gg10 parse* (mktz s10c))
+;; skip example 10, no real point
 
 ;; --------------------
 
@@ -220,12 +204,12 @@
      [(T op T) #:auto]
      [(E) #:auto]])
 (define gg11 (lr-parser #:grammar g11 #:start E #:implicit-end))
-(when PRINT? (send gg11 print))
 
-(define s11a '((lparen) (atom) (op) (atom) (op) (atom) (rparen)))
+(define lex11 lex5)
+(define ts11a "(12 + 72 + 300)")
 
-(send gg11 parse (mktz s11a))
-(send gg11 parse* (mktz s11a))
+(send gg11 parse (lex11 ts11a))
+(send gg11 parse* (lex11 ts11a))
 
 ;; ----------------------------------------
 
@@ -239,11 +223,9 @@
          [(T op T) #:auto]
          [(E) #:auto]])
     (lr-parser #:grammar g11 #:start E #:implicit-end)))
-(when PRINT? (send gg12 print))
 
-(send gg12 parse (mktz s11a))
-(send gg12 parse* (mktz s11a))
-
+(send gg12 parse (lex11 ts11a))
+(send gg12 parse* (lex11 ts11a))
 
 ;; ========================================
 ;; Parameters
@@ -256,10 +238,12 @@
      [(a) (list xy $1)]])
 
 (define gp1 (lr-parser #:grammar p1 #:start S))
-(define ss1a '((a)))
 
-(send gp1 parse (mktz ss1a))
-(send gp1 parse* (mktz ss1a))
+(define lexp1 (words-lexer '(a)))
+(define tss1a "a")
+
+(send gp1 parse (lexp1 tss1a))
+(send gp1 parse* (lexp1 tss1a))
 
 
 ;; ========================================
@@ -274,6 +258,8 @@
       [(x XS) (cons $1 $2)]])
 (define fp1 (lr-parser #:grammar f1 #:start S))
 
-(define sf1a '((x) (x) (x) (x)))
-;;(send fp1 parse (mktz sf1a))
-(send fp1 parse* (mktz sf1a))
+(define lexf1 (words-lexer '(x)))
+(define tsf1a "xxxx")
+
+;;(send fp1 parse (lexf1 tsf1a))
+(send fp1 parse* (lexf1 tsf1a))

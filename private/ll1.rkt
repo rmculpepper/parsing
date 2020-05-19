@@ -34,8 +34,8 @@
     (init summary-data)
     (super-new)
 
-    (define/public (parse get-token)
-      (ll1-parse start table vals get-token))
+    (define/public (parse tz)
+      (ll1-parse start table vals tz))
 
     (define rt (delay (new LL1-done% (summary-data summary-data))))
     (define/public (print)
@@ -48,12 +48,23 @@
 ;; ============================================================
 
 (define (ll1-parse start table vals tz)
-  (define (get-token peek? tr stack)
+  (match-define (tokenizer tz-get-token tz-commit-last) tz)
+  (define peeked-token #f)
+  (define (peek-token tr stack)
+    (cond [peeked-token peeked-token]
+          [else
+           (define tok (get-token tr stack))
+           (set! peeked-token tok)
+           tok]))
+  (define (read-token tr stack)
+    (begin0 (peek-token tr stack)
+      (set! peeked-token #f)))
+  (define (get-token tr stack)
     (cond [(symbol? tr)
-           (tz peek? tr null)]
+           (tz-get-token tr null)]
           [(pair? tr)
-           (tz peek? (car tr) (eval-user-expr (cdr tr) stack))]
-          [else (error 'll1-parse "bad tr: ~e" tr)]))
+           (tz-get-token (car tr) (eval-user-expr (cdr tr) stack))]
+          [else (error 'll1-parse "bad token reader: ~e" tr)]))
   (define (eval-user-expr ue stack)
     (apply (get-val (expr:user-fun ue))
            (get-token-args (expr:user-args ue) stack)))
@@ -68,7 +79,7 @@
   (define (loop-nt nt stack)
     (match (hash-ref table nt)
       [(list* tr ctxn dispatch)
-       (define next-tok (get-token #t tr null))
+       (define next-tok (peek-token tr null))
        (cond [(hash-ref dispatch (token-name next-tok) #f)
               => (lambda (ps) (loop-prod (car ps) ctxn stack))]
              [else (fail `(nt ,nt ,(hash-keys dispatch)) (cons next-tok stack))])]))
@@ -78,7 +89,7 @@
       [(ntelem nt)
        (cons (loop-nt nt stack) stack)]
       [(telem t tr)
-       (define next-tok (get-token #f tr stack))
+       (define next-tok (read-token tr stack))
        (if (eqv? t (token-name next-tok))
            (cons next-tok stack)
            (fail `(terminal ,t) (cons next-tok stack)))]

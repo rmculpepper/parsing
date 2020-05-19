@@ -35,10 +35,10 @@
     (init summary-data)
     (super-new)
 
-    (define/public (parse get-token)
-      (lr-parse pstates vals get-token))
-    (define/public (parse* get-token)
-      (glr-parse pstates vals get-token #:mode 'first-done))
+    (define/public (parse tz)
+      (lr-parse pstates vals tz))
+    (define/public (parse* tz)
+      (glr-parse pstates vals tz #:mode 'first-done))
 
     (define rt (delay (new LR-done% (summary-data summary-data))))
     (define/public (print)

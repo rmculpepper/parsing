@@ -124,16 +124,18 @@
   (define (get-state n) (vector-ref states n))
   (define (get-val n) (if (eq? n 'accept) values (vector-ref vals n)))
 
+  (match-define (tokenizer tz-get-token tz-commit-last) tz)
+
   (define (get-next-token tr)
     (match tr
-      [(? symbol? tk) (tz #f tk null)]
-      [(cons tf args) (tz #f tf args)]))
+      [(? symbol? tk) (tz-get-token tk null)]
+      [(cons tf args) (tz-get-token tf args)]))
 
   (define failed null) ;; mutated; (Listof (U VStack (box VStack))) -- box means #:top failed
   (define ready null) ;; mutated; (Listof StStack); ready to look at next token
   (define done null) ;; mutated; (Listof Result)
 
-  ;; run-until-look : StStack ?? -> Void
+  ;; run-until-look : StStack Token/#f -> Void
   ;; Runs each "thread" in sk until it needs input and adds to ready
   ;; list. A thread may fork or fail.
   (define (run-until-look sk next-tok)
@@ -153,7 +155,7 @@
                         (hash-ref (pstate-shift st) '#:else #f))
                     => (lambda (next-state)
                          (run-until-look (list* (get-state next-state) no-value st v1 sk**) next-tok))]
-                   [else (push! failed (box (list* v1 st vsk*)))]))]
+                   [else (fail (box (list* v1 st vsk*)) next-tok)]))]
           [else
            (for ([red (pstate-reduce st)] [i (in-naturals)])
              (dprintf "-- R2L #~s reduction ~s/~s\n"
@@ -169,6 +171,8 @@
     (match-define (reduction nt index arity ctxn action) red)
     (cond [(eq? action 'accept)
            (with-tstack vsk* [v sk**]
+             ;; If no lookahead, then last token was shifted, so commit.
+             (when (not next-tok) (tz-commit-last))
              (push! done v))]
           [else
            (with-tstack-pop/peek-values (cons st vsk*) arity ctxn
@@ -176,7 +180,7 @@
                (define value (make-nt-token nt (apply (get-val action) all-args) args))
                (dprintf "REDUCE(~s): ~v\n" nt value)
                (cond [(filter:reject? (token-value* value))
-                      (when KEEP-FAIL? (push! failed (cons value sk**)))]
+                      (fail (cons value sk**) next-tok)]
                      [else (goto value sk** next-tok)])))]))
 
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
@@ -205,7 +209,7 @@
                 (let ([sk (or sk (cons st vsk*))])
                   (run-until-look* (get-state next-state) (list* next-tok sk) #f)))]
           [(null? reds)
-           (when KEEP-FAIL? (push! failed (list* next-tok st vsk*)))]))
+           (fail (list* next-tok st vsk*) next-tok)]))
 
   (define (goto reduced sk next-tok)
     (with-tstack sk [st vsk*]
@@ -213,6 +217,10 @@
       (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
       (dprintf "GOTO ~v\n" next-state)
       (run-until-look* (get-state next-state) (list* reduced st vsk*) next-tok)))
+
+  (define (fail vsk* next-tok)
+    (when (not next-tok) (tz-commit-last))
+    (push! failed vsk*))
 
   (define (run-all-ready)
     (dprintf "\n==== STEP ====\n")

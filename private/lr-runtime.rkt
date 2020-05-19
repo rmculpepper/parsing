@@ -18,12 +18,14 @@
   (define (get-state n) (vector-ref states n))
   (define (get-val n) (if (eq? n 'accept) values (vector-ref vals n)))
 
-  (define (get-token peek? tr stack)
+  (match-define (tokenizer tz-get-token tz-commit-last) tz)
+
+  (define (get-token tr stack)
     (cond [(symbol? tr)
-           (tz peek? tr null)]
+           (tz-get-token tr null)]
           [(pair? tr)
-           (tz peek? (car tr) (eval-user-expr (cdr tr) stack))]
-          [else (error 'lr-parse "bad tr: ~e" tr)]))
+           (tz-get-token (car tr) (eval-user-expr (cdr tr) stack))]
+          [else (error 'lr-parse "bad token reader: ~e" tr)]))
   (define (eval-user-expr ue stack)
     (apply (get-val (expr:user-fun ue))
            (get-token-args (expr:user-args ue) stack)))
@@ -31,72 +33,76 @@
     (for/list ([vi (in-list args)])
       (list-ref stack (+ vi vi 1))))
 
-  (define (loop stack)
-    (loop* (car stack) stack))
-  (define (loop* st stack)
+  (define (loop stack next-tok)
+    (loop* (car stack) stack next-tok))
+  (define (loop* st stack next-tok)
     ;; st is usually (car stack), except when forwarded by #:top
     (dprintf "\nSTATE = #~v, ~s\n" (pstate-index st) (pstate-label st))
     (cond [(pstate-lookahead st)
            => (lambda (lookahead)
-                (define next-tok (get-token #t (pstate-tr st) stack))
-                (cond [(hash-ref lookahead (token-name next-tok) #f)
-                       => (lambda (reds) (reduce stack (car reds)))]
-                      [else (shift st stack)]))]
+                (let ([next-tok (or next-tok (get-token (pstate-tr st) stack))])
+                  (cond [(hash-ref lookahead (token-name next-tok) #f)
+                         => (lambda (reds) (reduce stack (car reds) next-tok))]
+                        [else (shift st stack next-tok)])))]
           ;; ??? reduce vs shift priority?
           [(pair? (pstate-reduce st))
-           (reduce stack (car (pstate-reduce st)))]
-          [else (shift st stack)]))
+           (reduce stack (car (pstate-reduce st)) next-tok)]
+          [else (shift st stack next-tok)]))
 
-  (define (reduce stack red)
+  (define (reduce stack red next-tok)
     (match-define (reduction nt index arity ctxn action) red)
     (cond [(eq? action 'accept)
+           ;; If no lookahead, then last token was shifted, so commit.
+           (when (not next-tok) (tz-commit-last))
            (cadr stack)]
           [else
            (define-values (stack* args all-args) (pop/peek-values arity ctxn stack))
            (define value (make-nt-token nt (apply (get-val action) all-args) args))
            (cond [(filter:reject? (token-value* value))
-                  (fail 'reduce stack* value)]
+                  (fail 'reduce stack* value next-tok)]
                  [else
                   (dprintf "REDUCE: ~v\n" value)
-                  (goto value stack*)])]))
+                  (goto value stack* next-tok)])]))
 
-  (define (shift st stack)
+  (define (shift st stack next-tok)
     (match (pstate-tr st)
-      ['#:top (do-top st stack)]
-      [tr (shift* st (get-token #f tr stack) stack)]))
+      ['#:top (do-top st stack next-tok)]
+      [tr (shift* st stack (or next-tok (get-token tr stack)))]))
 
-  (define (do-top st stack)
+  (define (do-top st stack next-tok)
     (define last-tok-value (token-value* (cadr stack) '#:else))
     (define shift-h (pstate-shift st))
     (cond [(or (hash-ref shift-h last-tok-value #f)
                (hash-ref shift-h '#:else #f))
            => (lambda (next-state)
                 (dprintf "TOP ~v, #~s\n" last-tok-value next-state)
-                (loop* (get-state next-state) stack))]
-          [else (fail 'top stack (token last-tok-value))]))
+                (loop* (get-state next-state) stack next-tok))]
+          [else (fail 'top stack (token last-tok-value) next-tok)]))
 
-  (define (shift* st next-tok stack)
+  (define (shift* st stack next-tok) ;; PRE: next-tok != #f
     (cond [(hash-ref (pstate-shift st) (token-name next-tok) #f)
            => (lambda (next-state)
                 (dprintf "SHIFT ~v, #~s\n" next-tok next-state)
-                (loop (list* (get-state next-state) next-tok stack)))]
+                (loop (list* (get-state next-state) next-tok stack) #f))]
           ;; Accept pre-parsed non-terminals from the lexer too.
           [(hash-ref (pstate-goto st) (token-name next-tok) #f)
            => (lambda (next-state)
-                (loop (list* (get-state next-state) next-tok stack)))]
-          [else (fail 'shift stack next-tok)]))
+                (loop (list* (get-state next-state) next-tok stack) #f))]
+          [else (fail 'shift stack next-tok next-tok)]))
 
-  (define (goto reduced stack)
+  (define (goto reduced stack next-tok)
     (define st (car stack))
-    (dprintf "RETURN VIA #~s\n" (pstate-index st))
+    (dprintf "RETURN TO #~s\n" (pstate-index st))
     (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
-    (dprintf "GOTO ~v\n" next-state)
-    (loop (list* (get-state next-state) reduced stack)))
+    (dprintf "GOTO #~s\n" next-state)
+    (loop (list* (get-state next-state) reduced stack) next-tok))
 
-  (define (fail how stack next-tok)
-    (parse-error 'lr-parser (lr-context how (cons next-tok stack))))
+  (define (fail how stack value next-tok)
+    ;; If no lookahead, then last token was shifted, so commit.
+    (when (not next-tok) (tz-commit-last))
+    (parse-error 'lr-parser (lr-context how (cons value stack))))
 
-  (loop (list (get-state 0))))
+  (loop (list (get-state 0)) #f))
 
 ;; ----------------------------------------
 

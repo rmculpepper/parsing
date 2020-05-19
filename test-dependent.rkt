@@ -3,6 +3,7 @@
          racket/match
          racket/pretty
          "main.rkt"
+         "private/lex-rx.rkt"
          (submod "test.rkt" util))
 (provide (all-defined-out)
          (all-from-out "main.rkt"))
@@ -27,11 +28,13 @@
 
 (define (d1-tokenizer vs)
   (define toks (make-toks vs))
-  (peeking-tokenizer
-   (lambda (peek? kind args)
-     (case kind
-       [(read-data) (token 'data (car args))]
-       [else (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) (token 'EOF))]))))
+  (define (default-get-token)
+    (if (pair? toks) (begin0 (car toks) (set! toks (cdr toks))) (token 'EOF)))
+  (tokenizer (lambda (tf args)
+               (case tf
+                 [(read-data) (token 'data (car args))]
+                 [else (default-get-token)]))
+             void))
 
 (send dg1 parse (d1-tokenizer sd1a))
 (send dg1 parse* (d1-tokenizer sd1a))
@@ -52,9 +55,7 @@
 
 (define (d2-tokenizer str)
   (define in (open-input-string str))
-  (peeking-tokenizer
-   (lambda (peek? kind args)
-     (get-char-token in #:token-name 'letter #:special '(#\space)))))
+  (make-tokenizer in (char-token-reader '(#\space) #:other-token-name 'letter)))
 
 (define sd2a "hello world how are you today")
 (send dg2 parse (d2-tokenizer sd2a))
@@ -72,11 +73,9 @@
 
 (define (d3-tokenizer str)
   (define in (open-input-string str))
-  (peeking-tokenizer
-   (lambda (peek? kind args)
-     (case kind
-       [(char) (get-char-token in #:token-name 'letter #:special '(#\; #\=))]
-       [else (get-string-token in #:token-name 'word #:delimiters '(#\;))]))))
+  (define char-tr (char-token-reader '(#\; #\=) #:other-token-name 'letter))
+  (define string-tr (make-token-reader #rx"[^;]*" (lambda (lexeme s e) (token 'word lexeme))))
+  (make-tokenizer in string-tr (hasheq 'char char-tr)))
 
 (define sd3a "h=hello;w=world;m=;g=how are you today")
 (send dg3 parse (d3-tokenizer sd3a))
@@ -130,9 +129,7 @@
 
 (define (d5-tokenizer bstr)
   (define in (open-input-bytes bstr))
-  (peeking-tokenizer
-   (lambda (peek? kind args)
-     (get-byte-token in))))
+  (make-tokenizer in (byte-token-reader '() #:other-token-name 'byte)))
 
 (define sd5a (bytes 1 42))
 (define sd5b (bytes 0))

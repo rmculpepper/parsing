@@ -29,10 +29,10 @@
 
 (struct tokenizer
   (get-token    ;; Symbol (Listof Arg) -> Token
-   mark-last    ;; (U 'commit 'rollback) -> Void
-   get-loc      ;; -> Location
+   commit-last  ;; -> Void
    ))
-;; get-token commits the previous peek and peeks the next token
+;; - get-token first calls commit-last, then peeks the next token
+;; - commit-last commits the previous peek
 
 #;
 (define (make-tokenizer read-token in
@@ -96,6 +96,7 @@
 
 ;; A SimpleTokenizer is (-> Token).
 
+#|
 (define (peeking-tokenizer tz)
   (define peeked #f)
   (define (tokenize peek? kind args)
@@ -152,6 +153,7 @@
            (cond [(or (eof-object? next) (memv next delims))
                   (token tname (get-output-string out))]
                  [else (begin (read-char in) (write-char next out) (loop))]))]))
+|#
 
 ;; ============================================================
 ;; Disambiguation filters
