@@ -27,6 +27,69 @@
 
 ;; ============================================================
 
+(struct tokenizer
+  (get-token    ;; Symbol (Listof Arg) -> Token
+   mark-last    ;; (U 'commit 'rollback) -> Void
+   get-loc      ;; -> Location
+   ))
+;; get-token commits the previous peek and peeks the next token
+
+#;
+(define (make-tokenizer read-token in
+                        #:can-rewind? [can-rewind? (string-port? in)])
+  (if can-rewind?
+      (make-rewinding-tokenizer read-token in)
+      (make-peeking-tokenizer read-token in)))
+
+#;
+(define (make-rewinding-tokenizer read-token in)
+  (define last-loc #f)
+  (define last-fpos #f)
+  (define (get-loc)
+    (define-values (line col pos) (port-next-location in))
+    (vector line col pos))
+  (define (get-token tf args)
+    (mark-last #t)
+    (set! last-loc (get-loc))
+    (set! last-fpos (file-position in))
+    (read-token tf args in))
+  (define (mark-last mode)
+    (case mode
+      [(commit)
+       (void)]
+      [(rollback)
+       (when last-fpos
+         (file-position last-fpos))
+       (when last-loc
+         (apply set-port-next-location! in (vector->list last-loc)))]))
+  (tokenizer get-token mark-last get-loc))
+
+#;
+(define (make-peeking-tokenizer read-token in)
+  (define peek-in (peeking-input-port in))
+  (file-stream-buffer-mode peek-in 'none) ;; ?? might change in's mode ?!
+  (port-count-lines! peek-in)
+  (call-with-values (lambda () (port-next-location in))
+                    (lambda args) (apply set-port-next-location! peek-in args))
+  (define last-read-amt 0)
+  (define (get-loc)
+    (define-values (line col pos) (port-next-location peek-in))
+    (vector line col pos))
+  (define (get-token tf args)
+    (mark-last #t)
+    (define pre-fpos (file-position peek-in))
+    (begin0 (read-token tf args peek-in)
+      (set! last-read-amt (- (file-position peek-in) pre-fpos))))
+  (define (mark-last mode)
+    (case mode
+      [(commit)
+       (when (> last-read-amt 0)
+         (void (read-bytes last-read-amt in))
+         (set! last-read-amt 0))]
+      [(rollback)
+       (void)]))
+  (tokenizer get-token mark-last get-loc))
+
 ;; A Tokenizer is (Boolean Symbol (Listof Arg) -> Token).
 ;; The tokenizer should be aware of peek vs read, so that for example
 ;; on input ports it can implement token-peeking by port-peeking.
