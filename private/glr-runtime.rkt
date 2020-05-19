@@ -242,7 +242,7 @@
        (if (null? tsk)
            (push! stacks (reverse acc))
            (with-tstack tsk [v tsk*]
-             (loop tsk* (cons (convert-pretty-states v) acc)))))
+             (loop tsk* (cons (convert-pretty-state v) acc)))))
      (for ([vsk (in-list (glr-context-vsks self))])
        (loop (if (box? vsk) (unbox vsk) vsk) null))
      stacks)
@@ -253,4 +253,11 @@
          (for ([t (in-hash-keys (pstate-shift s2))]) (hash-set! h t #t))))
      (for ([vsk (in-list (glr-context-vsks self))] #:when (not (box? vsk)))
        (loop vsk))
-     (if (hash-empty? h) #f (hash-keys h)))])
+     (if (hash-empty? h) #f (hash-keys h)))
+   (define (context->error-lines self)
+     (define stacks (context->stacks self))
+     (apply string-append
+            (format "\n  expected one of: ~s" (context->expected-terminals self))
+            #;(format "\n  stack count: ~s" (length stacks))
+            (for/list ([stack (in-list (context->stacks self))])
+              (format "\n  state: ~.s" (cadr stack)))))])

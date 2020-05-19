@@ -167,7 +167,8 @@
 
 (define (parse-error who context)
   (let/ec here
-    (raise (exn:fail:parse (format "~s: parse error" who)
+    (raise (exn:fail:parse (format "~s: parse error~a"
+                                   who (context->error-lines context))
                            (continuation-marks here)
                            context))))
 
@@ -176,5 +177,7 @@
   (context->stacks context) ;; Context -> (Listof (Listof (U Token PrettyState)))
   (context->expected-terminals context) ;; Context -> (U #f (Listof Terminal))
   (context->srclocs context) ;; Context -> (Listof srcloc)
+  (context->error-lines context) ;; Context -> String
   #:fallbacks
-  [(define (context->srclocs self) null)])
+  [(define (context->srclocs self) null)
+   (define (context->error-lines self) "")])

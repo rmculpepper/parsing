@@ -77,17 +77,19 @@
 
 (struct pretty-state (index label) #:prefab #:reflection-name 'state)
 
-(define (convert-pretty-states v)
+(define (convert-pretty-state v)
   (if (pstate? v) (pretty-state (pstate-index v) (pstate-label v)) v))
 
 (struct lr-context (op vsk)
   #:methods gen:context
   [(define (context->stack self)
-     (define (convert v)
-       (if (pstate? v) (pretty-state (pstate-index v) (pstate-label v)) v))
-     (map convert (lr-context-vsk self)))
+     (map convert-pretty-state (lr-context-vsk self)))
    (define (context->stacks self)
      (list (context->stack self)))
    (define (context->expected-terminals self)
      (match-define (lr-context op (list* v1 s2 _)) self)
-     (if (eq? op 'top) #f (hash-keys (pstate-shift s2))))])
+     (if (eq? op 'top) #f (hash-keys (pstate-shift s2))))
+   (define (context->error-lines self)
+     (format "\n  expected one of: ~s\n  state: ~e"
+             (context->expected-terminals self)
+             (convert-pretty-state (cadr (lr-context-vsk self)))))])
