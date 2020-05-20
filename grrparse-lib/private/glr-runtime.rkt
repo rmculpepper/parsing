@@ -266,6 +266,7 @@
      (define stacks (context->stacks self))
      (apply string-append
             (format "\n  expected one of: ~s" (context->expected-terminals self))
+            (format "\n  got: ~e" (car (car stacks)))
             #;(format "\n  stack count: ~s" (length stacks))
-            (for/list ([stack (in-list (context->stacks self))])
+            (for/list ([stack (in-list stacks)])
               (format "\n  state: ~.s" (cadr stack)))))])

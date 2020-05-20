@@ -1,15 +1,14 @@
 #lang racket/base
 (require racket/class
          racket/match
-         "main.rkt"
-         "private/common.rkt")
-(provide (all-defined-out)
-         (all-from-out "main.rkt"))
+         grrparse
+         #;grrparse/private/common)
+(provide (all-defined-out))
 
 (define PRINT? #f)
 
 (module util racket/base
-  (require racket/match "main.rkt")
+  (require racket/match grrparse)
   (provide (all-defined-out))
 
   (define (make-toks vs)

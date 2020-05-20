@@ -1,11 +1,10 @@
 #lang racket/base
 (require racket/class
          racket/match
-         "main.rkt"
-         "private/common.rkt"
-         "lex.rkt")
-(provide (all-defined-out)
-         (all-from-out "main.rkt"))
+         grrparse
+         ;;grrparse/private/common
+         grrparse/lex)
+(provide (all-defined-out))
 
 (define (words-token-reader words)
   (apply regexps-token-reader

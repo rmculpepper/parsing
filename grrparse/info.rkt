@@ -12,6 +12,6 @@
 ;; collection info
 
 (define name "grrparse")
-;;(define scribblings '(("scribblings/grrparse.scrbl" (multi-page))))
+(define scribblings '(("scribblings/grrparse.scrbl" (multi-page))))
 ;;(define compile-omit-paths '("examples"))
 ;;(define test-omit-paths '("examples"))

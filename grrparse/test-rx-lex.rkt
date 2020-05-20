@@ -1,8 +1,8 @@
 #lang racket/base
 (require racket/match
          racket/pretty
-         "private/common.rkt"
-         "private/lex-rx.rkt")
+         grrparse/private/common
+         grrparse/private/lex-rx)
 (provide (all-defined-out))
 
 (define tr

@@ -2,11 +2,10 @@
 (require racket/class
          racket/match
          racket/pretty
-         "main.rkt"
-         "lex.rkt"
+         grrparse
+         grrparse/lex
          (submod "test.rkt" util))
-(provide (all-defined-out)
-         (all-from-out "main.rkt"))
+(provide (all-defined-out))
 
 (pretty-print-columns 200)
 

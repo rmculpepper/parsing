@@ -119,12 +119,13 @@
 (define (regexps-token-reader #:location-mode [locmode (default-location-mode)]
                               #:handle-eof? [handle-eof? #t]
                               . rx+action-list)
-  (define table (make-lexer-table 'make-token-reader rx+action-list))
+  (define table
+    (make-lexer-table 'make-token-reader
+                      (if handle-eof?
+                          (list* #rx"^$" (lambda (l s e) 'EOF) rx+action-list)
+                          rx+action-list)))
   (define (token-reader in [args null])
-    (if (and handle-eof? (eof-object? (peek-byte in)))
-        (let ([loc (get-location locmode in)])
-          (values (token/no-value 'EOF loc loc) 0))
-        (get-token table in locmode 0 #f)))
+    (get-token table in locmode 0 #f))
   token-reader)
 
 ;; LexerTable = (cons (Vectorof Regexp) (Vectorof ActionFun))
