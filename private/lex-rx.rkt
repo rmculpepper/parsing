@@ -115,10 +115,10 @@
 ;; as trying (re1|re2|...) and then disambiguating that lexeme, because eg
 ;;   (regexp-match #rx"ab|abc" "abc") = "ab"    -- not longest match !!
 
-;; make-token-reader : { Regexp ActionFun }* -> TokenReader
-(define (make-token-reader #:location-mode [locmode (default-location-mode)]
-                           #:handle-eof? [handle-eof? #t]
-                           . rx+action-list)
+;; regexps-token-reader : { Regexp ActionFun }* -> TokenReader
+(define (regexps-token-reader #:location-mode [locmode (default-location-mode)]
+                              #:handle-eof? [handle-eof? #t]
+                              . rx+action-list)
   (define table (make-lexer-table 'make-token-reader rx+action-list))
   (define (token-reader in [args null])
     (if (and handle-eof? (eof-object? (peek-byte in)))
@@ -322,7 +322,7 @@
 ;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 (define tr
-  (make-token-reader
+  (regexps-token-reader
    #rx#"[a-zA-Z][a-zA-Z0-9]*"
    (lambda (lexeme start end) (token 'identifier lexeme))
    #rx"[0-9]+"

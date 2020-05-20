@@ -3,7 +3,7 @@
          racket/match
          racket/pretty
          "main.rkt"
-         "private/lex-rx.rkt"
+         "lex.rkt"
          (submod "test.rkt" util))
 (provide (all-defined-out)
          (all-from-out "main.rkt"))
@@ -53,13 +53,11 @@
 (define dg2 (lr-parser #:grammar d2 #:start Phrase))
 (when PRINT? (send dg2 print))
 
-(define (d2-tokenizer str)
-  (define in (open-input-string str))
-  (make-tokenizer in (char-token-reader '(#\space) #:other-token-name 'letter)))
+(define lexd2 (make-lexer (char-token-reader '(#\space) #:other-token-name 'letter)))
 
 (define sd2a "hello world how are you today")
-(send dg2 parse (d2-tokenizer sd2a))
-(send dg2 parse* (d2-tokenizer sd2a))
+(send dg2 parse (lexd2 sd2a))
+(send dg2 parse* (lexd2 sd2a))
 
 ;; ----------------------------------------
 
@@ -71,15 +69,17 @@
 (define dg3 (lr-parser #:grammar d3 #:start Settings))
 (when PRINT? (send dg3 print))
 
-(define (d3-tokenizer str)
-  (define in (open-input-string str))
-  (define char-tr (char-token-reader '(#\; #\=) #:other-token-name 'letter))
-  (define string-tr (make-token-reader #rx"[^;]*" (lambda (lexeme s e) (token 'word lexeme))))
-  (make-tokenizer in string-tr (hasheq 'char char-tr)))
+(define lexd3
+  (let ()
+    (define char-tr
+      (char-token-reader '(#\; #\=) #:other-token-name 'letter))
+    (define string-tr
+      (regexps-token-reader #rx"[^;]*" (lambda (lexeme s e) (token 'word lexeme))))
+    (make-lexer string-tr (hasheq 'char char-tr))))
 
 (define sd3a "h=hello;w=world;m=;g=how are you today")
-(send dg3 parse (d3-tokenizer sd3a))
-(send dg3 parse* (d3-tokenizer sd3a))
+(send dg3 parse (lexd3 sd3a))
+(send dg3 parse* (lexd3 sd3a))
 
 ;; ?? Maybe allow configurable default TokenReaders,
 ;; eg #:token-kind ([(#\space) char]) or #:token-kind ([char char])
@@ -96,7 +96,7 @@
 (define l3 (ll1-parser #:grammar d3* #:start Settings))
 (when PRINT? (send l3 print))
 
-(send l3 parse (d3-tokenizer sd3a))
+(send l3 parse (lexd3 sd3a))
 
 ;; ----------------------------------------
 
@@ -109,11 +109,11 @@
 (define gd4 (lr-parser #:grammar d4 #:start S))
 (when PRINT? (send gd4 print))
 
-(send gd4 parse (d3-tokenizer "A"))
-(send gd4 parse* (d3-tokenizer "A"))
+(send gd4 parse (lexd3 "A"))
+(send gd4 parse* (lexd3 "A"))
 
-(send gd4 parse (d3-tokenizer "B"))
-(send gd4 parse* (d3-tokenizer "B"))
+(send gd4 parse (lexd3 "B"))
+(send gd4 parse* (lexd3 "B"))
 
 ;; ----------------------------------------
 
@@ -127,15 +127,14 @@
 (define dg5 (lr-parser #:grammar d5 #:start S))
 (when PRINT? (send dg5 print))
 
-(define (d5-tokenizer bstr)
-  (define in (open-input-bytes bstr))
-  (make-tokenizer in (byte-token-reader '() #:other-token-name 'byte)))
+(define lexd5
+  (make-lexer (byte-token-reader '() #:other-token-name 'byte)))
 
 (define sd5a (bytes 1 42))
 (define sd5b (bytes 0))
 
-(send dg5 parse (d5-tokenizer sd5a))
-(send dg5 parse* (d5-tokenizer sd5a))
+(send dg5 parse (lexd5 sd5a))
+(send dg5 parse* (lexd5 sd5a))
 
-(send dg5 parse (d5-tokenizer sd5b))
-(send dg5 parse* (d5-tokenizer sd5b))
+(send dg5 parse (lexd5 sd5b))
+(send dg5 parse* (lexd5 sd5b))

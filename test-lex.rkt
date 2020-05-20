@@ -3,12 +3,12 @@
          racket/match
          "main.rkt"
          "private/common.rkt"
-         "private/lex-rx.rkt")
+         "lex.rkt")
 (provide (all-defined-out)
          (all-from-out "main.rkt"))
 
 (define (words-token-reader words)
-  (apply make-token-reader
+  (apply regexps-token-reader
          #rx"[ \t\r\n]+" (lambda (l s e) #f)
          (let loop ([words words])
            (cond [(null? words) null]
@@ -51,7 +51,7 @@
 
 (define lex2
   (make-lexer
-   (make-token-reader
+   (regexps-token-reader
     #rx"\\(" (lambda (l s e) 'lparen)
     #rx"\\)" (lambda (l s e) 'rparen)
     #rx"[0-9]+" (lambda (l s e) (token 'atom (string->number l)))
@@ -107,7 +107,7 @@
 
 (define lex5
   (make-lexer
-   (make-token-reader
+   (regexps-token-reader
     #rx"\\(" (lambda (l s e) 'lparen)
     #rx"\\)" (lambda (l s e) 'rparen)
     #rx"[0-9]+" (lambda (l s e) (token 'atom (string->number l)))
