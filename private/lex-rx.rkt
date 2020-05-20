@@ -5,25 +5,115 @@
          "token.rkt")
 (provide (all-defined-out))
 
+(define default-location-mode (make-parameter 'location))
+
+;; ============================================================
+;; Lexers
+
+;; Lexer = InputSource -> Tokenizer
+;; InputSource = InputPort | String | Bytes
+
+;; TokenReader = InputPort Args -> (values Token Nat)
+;; The second result is the number of bytes peeked (but not read) to end of
+;; token. A reader that reads instead of peeking should return 0 as second
+;; result. Note: second result can be greater than token length, if previous
+;; results were skipped.
+
+;; make-lexer : TokenReader Hash[Symbol => TokenReader] -> Lexer
+(define (make-lexer default-reader [readers #hasheq()])
+  (define (lexer src) (make-tokenizer src default-reader readers))
+  lexer)
+
+;; source->input-port : InputSource -> InputPort
+(define (source->input-port who src)
+  (cond [(input-port? src) src]
+        [(string? src) (let ([in (open-input-string src)]) (port-count-lines! in) in)]
+        [(bytes? src) (let ([in (open-input-bytes src)]) (port-count-lines! in) in)]))
+
+;; make-tokenizer : InputSource TokenReader Hash[Symbol => TokenReader] -> Tokenizer
+(define (make-tokenizer src default-reader [readers #hasheq()])
+  (define in (source->input-port 'make-tokenizer src))
+  (define last-peek-amt 0)
+  (define (get-token tf args)
+    (commit-last)
+    (define reader
+      (cond [(eq? tf 'default) default-reader]
+            [(hash-ref readers tf #f) => values]
+            [else (error 'make-tokenizer:get-token "no reader\n  name: ~e" tf)]))
+    (define-values (tok peek-amt) (reader in args))
+    (set! last-peek-amt peek-amt)
+    tok)
+  (define (commit-last)
+    (when (> last-peek-amt 0)
+      (void (read-bytes last-peek-amt in))
+      (set! last-peek-amt 0)))
+  (tokenizer get-token commit-last))
+
+;; ------------------------------------------------------------
+;; Peeking lexer
+
+(define ((peeking-lexer lx) src)
+  (define in (source->input-port 'peeking-lexer src))
+  (if (string-port? in)
+      (rewinding-tokenizer lx in)
+      (peeking-tokenizer lx in)))
+
+(define (peeking-tokenizer lx in)
+  (local-require (only-in racket/port peeking-input-port))
+  (define peek-in (peeking-input-port in))
+  (file-stream-buffer-mode peek-in 'none) ;; ?? might change in's mode ?!
+  (port-count-lines! peek-in)
+  (call-with-values (lambda () (port-next-location in))
+                    (lambda vs (apply set-port-next-location! peek-in vs)))
+  (match-define (tokenizer tz-get-token tz-commit-last) (lx peek-in))
+  (define last-peek-amt 0)
+  (define (get-token tf args)
+    (commit-last)
+    (tz-get-token tf args))
+  (define (commit-last)
+    (define saved-fpos (file-position peek-in))
+    (tz-commit-last)
+    (define diff (- (file-position peek-in) saved-fpos))
+    (void (read-bytes diff in)))
+  (tokenizer get-token commit-last))
+
+(define (rewinding-tokenizer lx in)
+  (match-define (tokenizer tz-get-token tz-commit-last) (lx in))
+  (define last-state #f) ;; (list fpos line col pos) or #f
+  (define (set-state state)
+    (when state
+      (file-position in (car state))
+      (apply set-port-next-location! in (cdr state))))
+  (define (get-state)
+    (cons (file-position in)
+          (call-with-values (lambda () (port-next-location in)) list)))
+  (define (get-token tf args)
+    (define saved-state (get-state))
+    (set-state last-state)
+    (begin0 (tz-get-token tf args)
+      (set! last-state (get-state))
+      (set-state saved-state)))
+  (define (commit-last)
+    (set-state last-state)
+    (tz-commit-last)
+    (set! last-state #f))
+  (tokenizer get-token commit-last))
+
+;; ============================================================
+;; Regexps token reader
+
 ;; This uses the naive strategy of trying all regexps on every call to
 ;; get-token, rather than combining them into a single extended FA.
 
 ;; Advantages: reuses Racket's regexp support, including peek!
 ;; Disadvantages: can be slow if there are many regexps
 
+;; Note: doesn't handle specials, because regexp-match et al raise error on
+;; special.
+
 ;; Note: trying all regexps and selecting the longest match is *not* the same
 ;; as trying (re1|re2|...) and then disambiguating that lexeme, because eg
 ;;   (regexp-match #rx"ab|abc" "abc") = "ab"    -- not longest match !!
-
-;; ============================================================
-
-;; TokenReader = InputPort Args -> (values Token Nat)
-;; Results are token, number of bytes peeked (not read) to end of token.
-;; A reader that reads instead of peeking should return 0 as second result.
-;; Note: second result can be greater than token length, if previous results
-;; were skipped.
-
-(define default-location-mode (make-parameter 'location))
 
 ;; make-token-reader : { Regexp ActionFun }* -> TokenReader
 (define (make-token-reader #:location-mode [locmode (default-location-mode)]
@@ -51,7 +141,8 @@
              (cons (convert-rx who rx) acc-rxs)
              (cons action acc-actions))]
       ['()
-       (cons (list->vector (reverse acc-rxs)) (list->vector (reverse acc-actions)))])))
+       (cons (list->vector (reverse acc-rxs))
+             (list->vector (reverse acc-actions)))])))
 
 (define (convert-rx who rx)
   (define (convert-rep rep rebuild)
@@ -106,7 +197,10 @@
          (values best-index best-end)])))
   (values best-index (and best-index (- best-end skip))))
 
-;; ----------------------------------------
+;; ============================================================
+;; Location modes
+
+;; StartLoc, EndLoc = Any -- depends on LocationMode
 
 ;; LocationMode =
 ;; | #f         -- always #f
@@ -118,6 +212,8 @@
 
 (struct location (line col pos) #:prefab)
 
+;; get-location : LocationMode InputPort -> StartLoc
+;; Returns a start location based on the input port's current position.
 (define (get-location locmode in)
   (case locmode
     [(position) (file-position in)]
@@ -129,6 +225,10 @@
      (srcloc (object-name in) line col pos #f)]
     [else #f]))
 
+;; get-end-location : LocationMode InputPort StartLoc Nat (U String Bytes Char #f)
+;;                 -> EndLoc
+;; Predicts the end location based on start, length, and lexeme contents.
+;; Note: cannot rely on the current port state, because peeking.
 (define (get-end-location locmode in start len-in-bytes lexeme)
   (case locmode
     [(location)
@@ -148,6 +248,10 @@
      (srcloc src line col pos len-in-chars)]
     [else #f]))
 
+;; get-restart-location : LocationMode StartLoc EndLoc (U String Bytes Char #f)
+;;                     -> StartLoc
+;; Predicts the next start location after given (skipped) lexeme.
+;; Note: cannot rely on the current port state, because peeking.
 (define (get-restart-location locmode start end lexeme)
   (case locmode
     [(srcloc)
@@ -157,6 +261,8 @@
      (srcloc src end-line end-col end-pos #f)]
     [else end]))
 
+;; update-line-col-pos : Nat/#f Nat/#f Nat/#f (U String Bytes Char #f)
+;;                    -> (values Nat/#f Nat/#f Nat/#f)
 (define (update-line-col-pos line col pos lexeme)
   ;; FIXME: "\t" not handled like Racket port-count-lines!
   (define (go newline-rx len get-col)
@@ -183,21 +289,7 @@
         [else (values #f #f #f)]))
 
 ;; ============================================================
-
-(define (peekX-token-reader terminals locmode peek-x get-x-len get-x-lexeme other-t)
-  (lambda (in args)
-    (define start (get-location locmode in))
-    (define next (peek-x in))
-    (cond [(eof-object? next)
-           (define end (get-end-location locmode in start 0 #f))
-           (values (token/no-value 'EOF start end) 0)]
-          [else
-           (define len-in-bytes (get-x-len next))
-           (define end (get-end-location locmode in start len-in-bytes (get-x-lexeme next)))
-           (values (if (member next terminals)
-                       (token/no-value next start end)
-                       (token other-t next start end))
-                   len-in-bytes)])))
+;; Token readers
 
 (define (char-token-reader terminals
                            #:other-token-name [other-tname 'char]
@@ -209,31 +301,22 @@
                            #:location-mode [locmode (default-location-mode)])
   (peekX-token-reader terminals locmode peek-byte (lambda (x) 1) integer->char other-tname))
 
-;; ============================================================
+(define (peekX-token-reader terminals locmode peek-x get-x-len get-x-lexeme other-t)
+  (lambda (in args)
+    (define start (get-location locmode in))
+    (define next (peek-x in))
+    (cond [(eof-object? next)
+           (define end (get-end-location locmode in start 0 #f))
+           (values (token/no-value 'EOF start end) 0)]
+          [else
+           (define len-in-bytes (get-x-len next))
+           (define end (get-end-location locmode in start len-in-bytes (get-x-lexeme next)))
+           (values (if (memv next terminals)
+                       (token/no-value next start end)
+                       (token other-t next start end))
+                   len-in-bytes)])))
 
-;; Lexer = InputSource -> Tokenizer
 
-(define (make-lexer default-reader [readers #hasheq()])
-  (define (lexer src) (make-tokenizer src default-reader readers))
-  lexer)
-
-(define (make-tokenizer src default-reader [readers #hasheq()])
-  (define in (source->input-port 'make-tokenizer src))
-  (define last-peek-amt 0)
-  (define (get-token tf args)
-    (commit-last)
-    (define reader
-      (cond [(eq? tf 'default) default-reader]
-            [(hash-ref readers tf #f) => values]
-            [else (error 'make-tokenizer:get-token "no reader\n  name: ~e" tf)]))
-    (define-values (tok peek-amt) (reader in args))
-    (set! last-peek-amt peek-amt)
-    tok)
-  (define (commit-last)
-    (when (> last-peek-amt 0)
-      (void (read-bytes last-peek-amt in))
-      (set! last-peek-amt 0)))
-  (tokenizer get-token commit-last))
 
 
 ;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX

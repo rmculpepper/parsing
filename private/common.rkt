@@ -26,65 +26,18 @@
       (error who "token has no payload\n  token: ~e" tok)))
 
 ;; ============================================================
+;; Tokenizers
 
-(struct tokenizer
-  (get-token    ;; Symbol (Listof Arg) -> Token
-   commit-last  ;; -> Void
-   ))
-;; - get-token first calls commit-last, then peeks the next token
+;; Tokenizer = (tokenizer TokenReaderDispatch (-> Void))
+;; TokenReaderDispatch = (Symbol List -> Token)
+;; - get-token first calls commit-last, then peeks/reads the next token
 ;; - commit-last commits the previous peek
+(struct tokenizer (get-token commit-last))
 
-(define ((peeking-lexer lx) src)
-  (define in (source->input-port 'peeking-lexer src))
-  (if (string-port? in)
-      (rewinding-tokenizer lx in)
-      (peeking-tokenizer lx in)))
-
-(define (source->input-port who src)
-  (cond [(input-port? src) src]
-        [(string? src) (let ([in (open-input-string src)]) (port-count-lines! in) in)]
-        [(bytes? src) (let ([in (open-input-bytes src)]) (port-count-lines! in) in)]))
-
-(define (peeking-tokenizer lx in)
-  (local-require (only-in racket/port peeking-input-port))
-  (define peek-in (peeking-input-port in))
-  (file-stream-buffer-mode peek-in 'none) ;; ?? might change in's mode ?!
-  (port-count-lines! peek-in)
-  (call-with-values (lambda () (port-next-location in))
-                    (lambda vs (apply set-port-next-location! peek-in vs)))
-  (match-define (tokenizer tz-get-token tz-commit-last) (lx peek-in))
-  (define last-peek-amt 0)
-  (define (get-token tf args)
-    (commit-last)
-    (tz-get-token tf args))
-  (define (commit-last)
-    (define saved-fpos (file-position peek-in))
-    (tz-commit-last)
-    (define diff (- (file-position peek-in) saved-fpos))
-    (void (read-bytes diff in)))
-  (tokenizer get-token commit-last))
-
-(define (rewinding-tokenizer lx in)
-  (match-define (tokenizer tz-get-token tz-commit-last) (lx in))
-  (define last-state #f) ;; (list fpos line col pos) or #f
-  (define (set-state state)
-    (when state
-      (file-position in (car state))
-      (apply set-port-next-location! in (cdr state))))
-  (define (get-state)
-    (cons (file-position in)
-          (call-with-values (lambda () (port-next-location in)) list)))
-  (define (get-token tf args)
-    (define saved-state (get-state))
-    (set-state last-state)
-    (begin0 (tz-get-token tf args)
-      (set! last-state (get-state))
-      (set-state saved-state)))
-  (define (commit-last)
-    (set-state last-state)
-    (tz-commit-last)
-    (set! last-state #f))
-  (tokenizer get-token commit-last))
+;; Peek vs Read: a tokenizer's get-token function can either peek or read from
+;; its input to get the next token. If a tokenizer always peeks, then a parser
+;; can consume exactly the bytes corresponding to the start nonterminal, without
+;; consuming the trailing lookahead token, for example.
 
 
 ;; ============================================================
