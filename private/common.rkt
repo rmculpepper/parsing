@@ -34,126 +34,58 @@
 ;; - get-token first calls commit-last, then peeks the next token
 ;; - commit-last commits the previous peek
 
-#;
-(define (make-tokenizer read-token in
-                        #:can-rewind? [can-rewind? (string-port? in)])
-  (if can-rewind?
-      (make-rewinding-tokenizer read-token in)
-      (make-peeking-tokenizer read-token in)))
+(define ((peeking-lexer lx) src)
+  (define in (source->input-port 'peeking-lexer src))
+  (if (string-port? in)
+      (rewinding-tokenizer lx in)
+      (peeking-tokenizer lx in)))
 
-#;
-(define (make-rewinding-tokenizer read-token in)
-  (define last-loc #f)
-  (define last-fpos #f)
-  (define (get-loc)
-    (define-values (line col pos) (port-next-location in))
-    (vector line col pos))
-  (define (get-token tf args)
-    (mark-last #t)
-    (set! last-loc (get-loc))
-    (set! last-fpos (file-position in))
-    (read-token tf args in))
-  (define (mark-last mode)
-    (case mode
-      [(commit)
-       (void)]
-      [(rollback)
-       (when last-fpos
-         (file-position last-fpos))
-       (when last-loc
-         (apply set-port-next-location! in (vector->list last-loc)))]))
-  (tokenizer get-token mark-last get-loc))
+(define (source->input-port who src)
+  (cond [(input-port? src) src]
+        [(string? src) (let ([in (open-input-string src)]) (port-count-lines! in) in)]
+        [(bytes? src) (let ([in (open-input-bytes src)]) (port-count-lines! in) in)]))
 
-#;
-(define (make-peeking-tokenizer read-token in)
+(define (peeking-tokenizer lx in)
+  (local-require (only-in racket/port peeking-input-port))
   (define peek-in (peeking-input-port in))
   (file-stream-buffer-mode peek-in 'none) ;; ?? might change in's mode ?!
   (port-count-lines! peek-in)
   (call-with-values (lambda () (port-next-location in))
-                    (lambda args) (apply set-port-next-location! peek-in args))
-  (define last-read-amt 0)
-  (define (get-loc)
-    (define-values (line col pos) (port-next-location peek-in))
-    (vector line col pos))
+                    (lambda vs (apply set-port-next-location! peek-in vs)))
+  (match-define (tokenizer tz-get-token tz-commit-last) (lx peek-in))
+  (define last-peek-amt 0)
   (define (get-token tf args)
-    (mark-last #t)
-    (define pre-fpos (file-position peek-in))
-    (begin0 (read-token tf args peek-in)
-      (set! last-read-amt (- (file-position peek-in) pre-fpos))))
-  (define (mark-last mode)
-    (case mode
-      [(commit)
-       (when (> last-read-amt 0)
-         (void (read-bytes last-read-amt in))
-         (set! last-read-amt 0))]
-      [(rollback)
-       (void)]))
-  (tokenizer get-token mark-last get-loc))
+    (commit-last)
+    (tz-get-token tf args))
+  (define (commit-last)
+    (define saved-fpos (file-position peek-in))
+    (tz-commit-last)
+    (define diff (- (file-position peek-in) saved-fpos))
+    (void (read-bytes diff in)))
+  (tokenizer get-token commit-last))
 
-;; A Tokenizer is (Boolean Symbol (Listof Arg) -> Token).
-;; The tokenizer should be aware of peek vs read, so that for example
-;; on input ports it can implement token-peeking by port-peeking.
+(define (rewinding-tokenizer lx in)
+  (match-define (tokenizer tz-get-token tz-commit-last) (lx in))
+  (define last-state #f) ;; (list fpos line col pos) or #f
+  (define (set-state state)
+    (when state
+      (file-position in (car state))
+      (apply set-port-next-location! in (cdr state))))
+  (define (get-state)
+    (cons (file-position in)
+          (call-with-values (lambda () (port-next-location in)) list)))
+  (define (get-token tf args)
+    (define saved-state (get-state))
+    (set-state last-state)
+    (begin0 (tz-get-token tf args)
+      (set! last-state (get-state))
+      (set-state saved-state)))
+  (define (commit-last)
+    (set-state last-state)
+    (tz-commit-last)
+    (set! last-state #f))
+  (tokenizer get-token commit-last))
 
-;; A SimpleTokenizer is (-> Token).
-
-#|
-(define (peeking-tokenizer tz)
-  (define peeked #f)
-  (define (tokenize peek? kind args)
-    (cond [peeked (begin0 peeked (unless peek? (set! peeked #f)))]
-          [peek? (let ([v (tz #f kind args)]) (set! peeked v) v)]
-          [else (tz #f kind args)]))
-  tokenize)
-
-(define (dispatch-tokenizer h)
-  (define (tokenize peek? kind args)
-    (cond [(hash-ref h kind #f)
-           => (lambda (v)
-                (cond [(procedure? v)
-                       (if (null? args) (v) (dispatch-arity-error kind 0 args))]
-                      [(= (car v) (length args)) (apply (cdr v) args)]
-                      [else (dispatch-arity-error kind (car v) null)]))]
-          [else (error 'tokenizer "unknown token kind\n  name: ~e" kind)]))
-  tokenize)
-
-(define (dispatch-arity-error kind arity args)
-  (cond [(zero? arity)
-         (error 'tokenizer
-                (string-append "token kind used with arguments"
-                               "\n  token kind: ~s"
-                               "\n  given: ~e")
-                kind args)]
-        [else
-         (error 'tokenizer
-                (string-append "token function arity mismatch"
-                               "\n  token function: ~s"
-                               "\n  expected: ~s arguments"
-                               "\n  given: ~e")
-                kind arity args)]))
-
-(define (get-char-token in #:token-name [tname 'char] #:special [special null])
-  (define next (peek-char in))
-  (cond [(eof-object? next) (token 'EOF)]
-        [(memv next special) (begin (read-char in) (token next next))]
-        [else (begin (read-char in) (token tname next))]))
-
-(define (get-byte-token in #:token-name [tname 'byte] #:special [special null])
-  (define next (peek-byte in))
-  (cond [(eof-object? next) (token 'EOF)]
-        [(memv next special) (begin (read-byte in) (token next next))]
-        [else (begin (read-byte in) (token tname next))]))
-
-(define (get-string-token in #:token-name [tname 'string] #:delimiters [delims null])
-  (define next (peek-char in))
-  (cond [(eof-object? next) (token 'EOF)]
-        [else
-         (define out (open-output-string))
-         (let loop ()
-           (define next (peek-char in))
-           (cond [(or (eof-object? next) (memv next delims))
-                  (token tname (get-output-string out))]
-                 [else (begin (read-char in) (write-char next out) (loop))]))]))
-|#
 
 ;; ============================================================
 ;; Disambiguation filters

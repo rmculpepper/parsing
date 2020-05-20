@@ -211,17 +211,14 @@
 
 ;; ============================================================
 
-;; FIXME:
 ;; Lexer = InputSource -> Tokenizer
 
-(define ((make-lexer default-reader [readers #hasheq()]) src)
-  (make-tokenizer src default-reader readers))
+(define (make-lexer default-reader [readers #hasheq()])
+  (define (lexer src) (make-tokenizer src default-reader readers))
+  lexer)
 
 (define (make-tokenizer src default-reader [readers #hasheq()])
-  (define in
-    (cond [(input-port? src) src]
-          [(string? src) (let ([in (open-input-string src)]) (port-count-lines! in) in)]
-          [(bytes? src) (let ([in (open-input-bytes src)]) (port-count-lines! in) in)]))
+  (define in (source->input-port 'make-tokenizer src))
   (define last-peek-amt 0)
   (define (get-token tf args)
     (commit-last)
