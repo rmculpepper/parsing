@@ -28,7 +28,7 @@
   (define params-spec (make-parameter null)) ;; (Listof Identifier)
 
   (define (map-apply fs . xs) (for/list ([f (in-list fs)]) (apply f xs)))
-  (define (mk-$n n) (format-id (current-syntax-context) "$~a" n))
+  (define (mk-$n n lctx) (format-id lctx "$~a" n))
 
   (define-syntax-class ntdef #:attributes (nt nt.ast mkast)
     #:description "nonterminal definition"
@@ -74,6 +74,7 @@
                             (for/fold ([acc null] [venv null]
                                        #:result (values (list->vector (reverse acc)) venv))
                                       ([e-mkast (in-list ($ e.mkast))]
+                                       [e-stx (in-list (syntax->list #'(e ...)))]
                                        [var (in-list ($ e.name))]
                                        [index (in-naturals 1)])
                               (define elem (e-mkast nt? venv))
@@ -82,7 +83,7 @@
                                               "first element in production cannot be #:top"))
                               (values (cons elem acc)
                                       (cond [(top-elem? elem) venv]
-                                            [else (cons (or var (mk-$n index)) venv)]))))))
+                                            [else (cons (or var (mk-$n index e-stx)) venv)]))))))
 
   (define-syntax-class elem #:attributes (name mkast)
     #:description #f
