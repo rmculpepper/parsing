@@ -268,5 +268,9 @@
             (format "\n  expected one of: ~s" (context->expected-terminals self))
             (format "\n  got: ~e" (car (car stacks)))
             #;(format "\n  stack count: ~s" (length stacks))
-            (for/list ([stack (in-list stacks)])
-              (format "\n  state: ~.s" (cadr stack)))))])
+            (let ()
+              (define lines null)
+              (for ([vsk (in-list (glr-context-vsks self))])
+                (with-tstack vsk [_v s _]
+                  (push! lines (format "\n  state: ~.s" (convert-pretty-state s)))))
+              (reverse lines))))])
