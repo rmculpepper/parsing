@@ -276,3 +276,31 @@
 (define sf1a '((x) (x) (x) (x)))
 ;;(send fp1 parse (mktz sf1a))
 (send fp1 parse* (mktz sf1a))
+
+;; ========================================
+;; Collect
+
+(eprintf "\nExample C 1\n")
+(define-grammar c1
+  [E [(a) #:> $1]
+     [(E op E) #:> (list $1 $2 $3)]
+     [(lp E rp) #:> (action:collect $2)]])
+(define cp1 (lr-parser #:grammar c1 #:start E))
+
+(define sc1a (map list '(lp a op a op a rp op a)))
+(send cp1 parse* (mktz sc1a))
+
+;; ----------------------------------------
+
+(eprintf "\nExample C 2\n")
+(define-grammar c2
+  [E [(a op a) #:apply list]
+     [(a) $1]]
+  [E* [(E) (action:collect $1)]]
+  [S [([e1 E*] [o op] [e2 E*])
+      (list e1 o e2)]])
+
+(define cp2 (lr-parser #:grammar c2 #:start S))
+
+(define sc2a (map list '(a op a op a)))
+(send cp2 parse* (mktz sc2a)) ;; -- must not mix parses
