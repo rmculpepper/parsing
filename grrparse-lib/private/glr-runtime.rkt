@@ -144,15 +144,14 @@
   ;; Runs each "thread" in sk until it needs input and adds to ready
   ;; list. A thread may fork or fail.
   (define (run-until-look sk next-tok)
-    (with-ststack sk [st vsk*] (run-until-look* st vsk* next-tok)))
-  (define (run-until-look* st vsk* next-tok)
+    (match-define (cons st vsk*) sk)
     (dprintf "\nR2L STATE = #~v, ~s\n" (pstate-index st) (pstate-label st))
     (cond [(pstate-lookahead st)
            => (lambda (lookahead)
                 (cond [next-tok
                        (dprintf "-- R2L #~s lookahead (~v)\n"
                                 (pstate-index st) (token-name next-tok))
-                       (look* #f st vsk* next-tok)]
+                       (look1 sk next-tok)]
                       [else (push! ready (cons st vsk*))]))]
           [(eq? (pstate-tr st) '#:top)
            (with-vstack vsk* [v1 sk**]
@@ -160,27 +159,27 @@
                         (hash-ref (pstate-shift st) '#:else #f))
                     => (lambda (next-state)
                          (run-until-look (list* (get-state next-state) no-value st v1 sk**) next-tok))]
-                   [else (fail (box (list* v1 st vsk*)) next-tok)]))]
+                   [else (fail (box (list* v1 st v1 sk**)) next-tok)]))]
           [else
            (for ([red (pstate-reduce st)] [i (in-naturals)])
              (dprintf "-- R2L #~s reduction ~s/~s\n"
                       (pstate-index st) (add1 i) (length (pstate-reduce st)))
-             (reduce st vsk* red next-tok))
+             (reduce sk red next-tok))
            (dprintf "-- R2L #~s continue (~s)\n"
                     (pstate-index st) (and next-tok (token-name next-tok)))
-           (cond [next-tok (look* #f st vsk* next-tok)]
+           (cond [next-tok (look1 sk next-tok)]
                  [(not (hash-empty? (pstate-shift st)))
                   (push! ready (cons st vsk*))])]))
 
-  (define (reduce st vsk* red next-tok)
+  (define (reduce sk red next-tok)
     (match-define (reduction nt index arity ctxn action) red)
     (cond [(eq? action 'accept)
-           (with-vstack vsk* [v sk**]
+           (with-ststack sk [_st v _sk**]
              ;; If no lookahead, then last token was shifted, so commit.
              (when (not next-tok) (tz-commit-last))
              (push! done v))]
           [else
-           (with-ststack-pop/peek-values (cons st vsk*) arity ctxn
+           (with-ststack-pop/peek-values sk arity ctxn
              (lambda (sk** args all-args)
                (define (mktok v) (make-nt-token nt v args))
                (define value (apply (get-val action) all-args))
@@ -208,40 +207,38 @@
            (set! collectors (hash-set collectors prod-id cb))
            cb]))
 
-  (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
+  (define (look sks) ;; sks : (Listof StStack)
     (define tr (stacks-consistent-tr sks get-val))
     (define next-tok (get-next-token tr))
     (dprintf "LOOK: read ~v\nSTATES: ~v\n\n"
              next-tok (map pstate-index (map car sks)))
-    (for ([sk (in-list sks)])
-      (match-define (cons st vsk*) sk)
-      (look* sk st vsk* next-tok)))
-  (define (look* sk st vsk* next-tok) ;; sk = (cons st vsk*) or #f, saves re-alloc
+    (for ([sk (in-list sks)]) (look1 sk next-tok)))
+
+  (define (look1 sk next-tok)
+    (match-define (cons st vsk*) sk)
     (define reds (hash-ref (or (pstate-lookahead st) #hash()) (token-name next-tok) null))
     (for ([red (in-list reds)] [i (in-naturals)])
       (dprintf "-- L #~s reduction ~s/~s\n" (pstate-index st) (add1 i) (length reds))
-      (reduce st vsk* red next-tok))
+      (reduce sk red next-tok))
     (dprintf "-- L #~s continue (~v)\n" (pstate-index st) (token-name next-tok))
     (cond [(hash-ref (pstate-shift st) (token-name next-tok) #f)
            => (lambda (next-state)
                 (dprintf "SHIFT ~v, #~s\n" next-tok next-state)
-                (let ([sk (or sk (cons st vsk*))])
-                  (run-until-look* (get-state next-state) (list* next-tok sk) #f)))]
+                (run-until-look (list* (get-state next-state) next-tok sk) #f))]
           ;; Accept pre-parsed non-terminals from the lexer too.
           [(hash-ref (pstate-goto st) (token-name next-tok) #f)
            => (lambda (next-state)
                 (dprintf "SHIFT ~v, #~s\n" next-tok next-state)
-                (let ([sk (or sk (cons st vsk*))])
-                  (run-until-look* (get-state next-state) (list* next-tok sk) #f)))]
+                (run-until-look (list* (get-state next-state) next-tok sk) #f))]
           [(null? reds)
-           (fail (list* next-tok st vsk*) next-tok)]))
+           (fail (list* next-tok sk) next-tok)]))
 
   (define (goto reduced sk next-tok)
     (with-ststack sk [st vsk*]
       (dprintf "RETURN VIA #~s\n" (pstate-index st))
       (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
       (dprintf "GOTO ~v\n" next-state)
-      (run-until-look* (get-state next-state) (list* reduced st vsk*) next-tok)))
+      (run-until-look (list* (get-state next-state) reduced st vsk*) next-tok)))
 
   (define (fail vsk* next-tok)
     (when (not next-tok) (tz-commit-last))
@@ -258,7 +255,7 @@
     (set! collectors '#hash())
     (look ready*))
 
-  (run-until-look* (get-state 0) null #f)
+  (run-until-look (list (get-state 0)) #f)
   (dprintf "\n==== START STEPPING ====\n")
   (let loop ()
     (finish-collectors!)
