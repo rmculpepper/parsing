@@ -98,12 +98,15 @@
            (stack-ref 1)]
           [else
            (define-values (args all-args) (pop/peek-values arity ctxn))
-           (define value (make-nt-token nt (apply (get-val action) all-args) args))
-           (cond [(filter:reject? (token-value* value))
-                  (fail 'reduce value next-tok)]
+           (define (mktok v) (make-nt-token nt v args))
+           (define value (apply (get-val action) all-args))
+           (cond [(filter:reject? value)
+                  (fail 'reduce (mktok value) next-tok)]
+                 [(action:collect? value)
+                  (mktok (collect-box (list value)))]
                  [else
                   (dprintf "REDUCE: ~v\n" value)
-                  (goto value next-tok)])]))
+                  (goto (mktok value) next-tok)])]))
 
   (define (shift st next-tok)
     (match (pstate-tr st)

@@ -134,6 +134,7 @@
   (define failed null) ;; mutated; (Listof (U VStack (box VStack))) -- box means #:top failed
   (define ready null) ;; mutated; (Listof StStack); ready to look at next token
   (define done null) ;; mutated; (Listof Result)
+  (define collectors '#hash()) ;; mutated; Hash[(cons Symbol Nat) => collect-box]
 
   ;; run-until-look : StStack Token/#f -> Void
   ;; Runs each "thread" in sk until it needs input and adds to ready
@@ -177,11 +178,31 @@
           [else
            (with-tstack-pop/peek-values (cons st vsk*) arity ctxn
              (lambda (sk** args all-args)
-               (define value (make-nt-token nt (apply (get-val action) all-args) args))
+               (define (mktok v) (make-nt-token nt v args))
+               (define value (apply (get-val action) all-args))
                (dprintf "REDUCE(~s): ~v\n" nt value)
-               (cond [(filter:reject? (token-value* value))
-                      (fail (cons value sk**) next-tok)]
-                     [else (goto value sk** next-tok)])))]))
+               (cond [(filter:reject? value)
+                      (fail (cons (mktok value) sk**) next-tok)]
+                     [(action:collect? value)
+                      ;; Could use return state in hash key, but using state
+                      ;; after goto should potentially enable more sharing.
+                      ;; FIXME: reductions w/ vs w/o lookahead could inhibit sharing.
+                      (define next-state (hash-ref (pstate-goto (car sk**)) nt #f))
+                      (define cb (collect-value (cons nt next-state) (action:collect-value value)))
+                      (when cb (goto (mktok cb) sk** next-tok))]
+                     [else (goto (mktok value) sk** next-tok)])))]))
+
+  (define (collect-value prod-id value)
+    (cond [(hash-ref collectors prod-id #f)
+           => (lambda (cb)
+                (let ([h (collect-box-vs cb)])
+                  (set-collect-box-vs! cb (hash-set h value #t)))
+                ;; If cb exists, another thread has already continued, so we shouldn't.
+                #f)]
+          [else
+           (define cb (collect-box (hash value #t)))
+           (set! collectors (hash-set collectors prod-id cb))
+           cb]))
 
   (define (look sks) ;; sks : (Listof StStack), each stack starts with cons
     (define tr (stacks-consistent-tr sks get-val))
@@ -222,16 +243,21 @@
     (when (not next-tok) (tz-commit-last))
     (push! failed vsk*))
 
+  (define (finish-collectors!)
+    (for ([cb (in-hash-values collectors)]) (collect-box-finish! cb)))
+
   (define (run-all-ready)
     (dprintf "\n==== STEP ====\n")
     (define ready* (tjoin-on-cdrs ready))
     (set! ready null)
     (set! failed null)
+    (set! collectors '#hash())
     (look ready*))
 
   (run-until-look* (get-state 0) null #f)
   (dprintf "\n==== START STEPPING ====\n")
   (let loop ()
+    (finish-collectors!)
     (cond [(and (memq mode '(shortest)) (pair? done)) done]
           [(null? ready) (if (pair? done) done (parse-error 'glr-parser (glr-context failed)))]
           [else (run-all-ready) (loop)])))

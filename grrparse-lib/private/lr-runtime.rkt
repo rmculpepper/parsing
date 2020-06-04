@@ -57,12 +57,15 @@
            (cadr stack)]
           [else
            (define-values (stack* args all-args) (pop/peek-values arity ctxn stack))
-           (define value (make-nt-token nt (apply (get-val action) all-args) args))
-           (cond [(filter:reject? (token-value* value))
-                  (fail 'reduce stack* value next-tok)]
+           (define (mktok v) (make-nt-token nt v args))
+           (define value (apply (get-val action) all-args))
+           (cond [(filter:reject? value)
+                  (fail 'reduce stack* (mktok value) next-tok)]
+                 [(action:collect? value)
+                  (mktok (collect-box (list value)))]
                  [else
                   (dprintf "REDUCE: ~v\n" value)
-                  (goto value stack* next-tok)])]))
+                  (goto (mktok value) stack* next-tok)])]))
 
   (define (shift st stack next-tok)
     (match (pstate-tr st)

@@ -1,6 +1,7 @@
 #lang racket/base
 (require racket/match
          racket/class
+         racket/struct
          racket/generic
          (submod "grammar-rep.rkt" common)
          "token.rkt")
@@ -44,6 +45,28 @@
 ;; Disambiguation filters
 
 (struct filter:reject () #:prefab)
+
+;; ============================================================
+;; Collecting values
+
+(struct action:collect (value) #:prefab)
+
+(struct collect-box (vs) #:mutable
+  #:property prop:custom-write
+  (make-constructor-style-printer
+   (lambda (self) 'collect-box)
+   (lambda (self)
+     (match self
+       [(collect-box (? list? vs)) (list vs)]
+       [(collect-box _) (unquoted-printing-string "...")]))))
+(define (collect-box-contents cb)
+  (match cb
+    [(collect-box (? list? vs))
+     vs]
+    [(collect-box (? hash? h))
+     (error 'collect-box-contents "contents are not ready")]))
+(define (collect-box-finish! cb)
+  (set-collect-box-vs! cb (hash-keys (collect-box-vs cb))))
 
 ;; ============================================================
 ;; Error reporting
