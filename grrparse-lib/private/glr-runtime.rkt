@@ -5,41 +5,45 @@
          "lr-common.rkt")
 (provide (all-defined-out))
 
-;; A TStack is one of
-;; - null
-;; - (cons X TStack)
-;; - (TJoin (NonemptyListof TStack)) -- TJoin should not contain TJoin child
-;; A TStack represents a list of stacks with tail sharing (standard
-;; for cons-based lists) *and* head sharing (via TJoin).
-(struct TJoin (stacks) #:prefab)
+;; StStack = (cons PState VStack)
+;; VStack = null | (cons Token StStack) | (Vectorof VStack)
+;; where a vector node does not contain vector children.
 
-(define-syntax with-tstack
+;; TStack = StStack | VStack, represents a list of stacks with tail
+;; sharing (as standard for lists) *and* head sharing (via vectors).
+
+(define-syntax with-ststack
   (syntax-rules ()
-    [(with-tstack tsk (tsk-var) . body)
-     (let ([tsk-var tsk]) . body)]
-    [(with-tstack tsk (elem-var . more) . body)
-     (tstack-split tsk (lambda (elem-var tsk-rest) (with-tstack tsk-rest more . body)))]))
+    [(with-ststack sk (sk-var) . body)
+     (let ([sk-var sk]) . body)]
+    [(with-ststack sk (var1 . more) . body)
+     (match sk [(cons var1 rest) (with-vstack rest more . body)])]))
 
-(define (tstack-split tsk f)
+(define-syntax with-vstack
+  (syntax-rules ()
+    [(with-vstack vsk (vsk-var) . body)
+     (let ([vsk-var vsk]) . body)]
+    [(with-vstack vsk (var1 . more) . body)
+     (vstack-split vsk (lambda (var1 rest) (with-vstack rest more . body)))]))
+
+(define (vstack-split tsk f)
   (match tsk
     [(cons x tsk*) (f x tsk*)]
-    [(TJoin tsks) (for ([tsk (in-list tsks)]) (tstack-split tsk f))]
+    [(? vector? tsks) (for ([tsk (in-vector tsks)]) (vstack-split tsk f))]
     ['() (error 'tstack-split "empty stack")]))
 
-;; tjoin-on-cdrs : (NEListof TStack) -> (NEListof TStack)
-;; The input stacks must be pairs (ie, not empty, not TJoins), and
-;; each stack in the result is also a pair.
+;; tjoin-on-cdrs : (NEListof StStack) -> (NEListof StStack)
 (define (tjoin-on-cdrs stacks)
   (match stacks
     [(list _) stacks]
     [(list s1 s2)
      (cond [(eq? (car s1) (car s2))
-            (list (cons (car s1) (TJoin (list (cdr s1) (cdr s2)))))]
+            (list (cons (car s1) (vector (cdr s1) (cdr s2))))]
            [else stacks])]
     [else
      (for/list ([group (in-list (group-by car stacks eq?))])
        (cond [(singleton? group) (car group)]
-             [else (cons (caar group) (TJoin (map cdr group)))]))]))
+             [else (cons (caar group) (list->vector (map cdr group)))]))]))
 
 (define (singleton? x) (and (pair? x) (null? (cdr x))))
 
@@ -69,7 +73,7 @@
          (cond [(null? args)
                 (do-tr (cons tr-name (apply (get-val fun-index) (reverse acc))))]
                [else
-                (with-tstack sk [_s v sk**]
+                (with-ststack sk [_s v sk**]
                   (cond [(< depth (car args))
                          (argsloop args sk** (add1 depth) acc)]
                         [(= depth (car args))
@@ -89,20 +93,20 @@
 ;; - sk, sk** : StStack
 ;; - vsk*     : VStack
 
-(define (with-tstack-pop/peek-values sk popn peekn k)
+(define (with-ststack-pop/peek-values sk popn peekn k)
   (let loop ([sk sk] [popn popn] [acc null])
-    (cond [(zero? popn) (with-tstack-peek-values sk peekn acc k)]
-          [else (with-tstack sk [s1 v2 sk**]
+    (cond [(zero? popn) (with-ststack-peek-values sk peekn acc k)]
+          [else (with-ststack sk [s1 v2 sk**]
                   (cond [(no-value? v2)
                          (loop sk** popn acc)]
                         [else
                          (loop sk** (sub1 popn) (cons v2 acc))]))])))
 
-(define (with-tstack-peek-values sk peekn onto k)
+(define (with-ststack-peek-values sk peekn onto k)
   (define (rev-append xs ys) (foldl cons ys xs))
   (let loop ([sk sk] [peekn peekn] [acc onto] [revsk null])
     (cond [(zero? peekn) (k (rev-append revsk sk) onto acc)]
-          [else (with-tstack sk [s1 v2 sk**]
+          [else (with-ststack sk [s1 v2 sk**]
                   (cond [(no-value? v2)
                          (loop sk** peekn acc (list* v2 s1 revsk))]
                         [else
@@ -140,7 +144,7 @@
   ;; Runs each "thread" in sk until it needs input and adds to ready
   ;; list. A thread may fork or fail.
   (define (run-until-look sk next-tok)
-    (with-tstack sk [st vsk*] (run-until-look* st vsk* next-tok)))
+    (with-ststack sk [st vsk*] (run-until-look* st vsk* next-tok)))
   (define (run-until-look* st vsk* next-tok)
     (dprintf "\nR2L STATE = #~v, ~s\n" (pstate-index st) (pstate-label st))
     (cond [(pstate-lookahead st)
@@ -151,7 +155,7 @@
                        (look* #f st vsk* next-tok)]
                       [else (push! ready (cons st vsk*))]))]
           [(eq? (pstate-tr st) '#:top)
-           (with-tstack vsk* [v1 sk**]
+           (with-vstack vsk* [v1 sk**]
              (cond [(or (hash-ref (pstate-shift st) (token-value* v1 '#:else) #f)
                         (hash-ref (pstate-shift st) '#:else #f))
                     => (lambda (next-state)
@@ -171,12 +175,12 @@
   (define (reduce st vsk* red next-tok)
     (match-define (reduction nt index arity ctxn action) red)
     (cond [(eq? action 'accept)
-           (with-tstack vsk* [v sk**]
+           (with-vstack vsk* [v sk**]
              ;; If no lookahead, then last token was shifted, so commit.
              (when (not next-tok) (tz-commit-last))
              (push! done v))]
           [else
-           (with-tstack-pop/peek-values (cons st vsk*) arity ctxn
+           (with-ststack-pop/peek-values (cons st vsk*) arity ctxn
              (lambda (sk** args all-args)
                (define (mktok v) (make-nt-token nt v args))
                (define value (apply (get-val action) all-args))
@@ -233,7 +237,7 @@
            (fail (list* next-tok st vsk*) next-tok)]))
 
   (define (goto reduced sk next-tok)
-    (with-tstack sk [st vsk*]
+    (with-ststack sk [st vsk*]
       (dprintf "RETURN VIA #~s\n" (pstate-index st))
       (define next-state (hash-ref (pstate-goto st) (token-name reduced)))
       (dprintf "GOTO ~v\n" next-state)
@@ -272,18 +276,18 @@
        [(list s) s] [_ (error 'context->stacks "multiple stacks")]))
    (define (context->stacks self)
      (define stacks null)
-     (define (loop tsk acc)
-       (if (null? tsk)
+     (define (loop vsk acc)
+       (if (null? vsk)
            (push! stacks (reverse acc))
-           (with-tstack tsk [v tsk*]
-             (loop tsk* (cons (convert-pretty-state v) acc)))))
+           (with-vstack vsk [v st vsk**]
+             (loop vsk** (list* (convert-pretty-state st) v acc)))))
      (for ([vsk (in-list (glr-context-vsks self))])
        (loop (if (box? vsk) (unbox vsk) vsk) null))
      stacks)
    (define (context->expected-terminals self)
      (define h (make-hash))
      (define (loop vsk)
-       (with-tstack vsk [v1 s2 _]
+       (with-vstack vsk [v1 s2 _]
          (for ([t (in-hash-keys (pstate-shift s2))]) (hash-set! h t #t))))
      (for ([vsk (in-list (glr-context-vsks self))] #:when (not (box? vsk)))
        (loop vsk))
@@ -297,6 +301,6 @@
             (let ()
               (define lines null)
               (for ([vsk (in-list (glr-context-vsks self))])
-                (with-tstack vsk [_v s _]
+                (with-vstack vsk [_v s _]
                   (push! lines (format "\n  state: ~.s" (convert-pretty-state s)))))
               (remove-duplicates (reverse lines)))))])
