@@ -44,10 +44,10 @@
 ;; ============================================================
 ;; Disambiguation filters
 
-(struct filter:reject () #:prefab)
+(struct action:reject () #:prefab)
 
 ;; ============================================================
-;; Collecting values
+;; Backtracking control actions
 
 (struct action:collect (value) #:prefab)
 

@@ -7,7 +7,7 @@
          define-grammar
          lr-parser
          ll1-parser
-         filter:reject)
+         action:reject)
 
 ;; ----------------------------------------
 ;; TO DO

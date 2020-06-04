@@ -181,7 +181,7 @@
                (define (mktok v) (make-nt-token nt v args))
                (define value (apply (get-val action) all-args))
                (dprintf "REDUCE(~s): ~v\n" nt value)
-               (cond [(filter:reject? value)
+               (cond [(action:reject? value)
                       (fail (cons (mktok value) sk**) next-tok)]
                      [(action:collect? value)
                       ;; Could use return state in hash key, but using state
@@ -299,4 +299,4 @@
               (for ([vsk (in-list (glr-context-vsks self))])
                 (with-tstack vsk [_v s _]
                   (push! lines (format "\n  state: ~.s" (convert-pretty-state s)))))
-              (reverse lines))))])
+              (remove-duplicates (reverse lines)))))])

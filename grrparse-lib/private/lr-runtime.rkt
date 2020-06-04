@@ -59,7 +59,7 @@
            (define-values (stack* args all-args) (pop/peek-values arity ctxn stack))
            (define (mktok v) (make-nt-token nt v args))
            (define value (apply (get-val action) all-args))
-           (cond [(filter:reject? value)
+           (cond [(action:reject? value)
                   (fail 'reduce stack* (mktok value) next-tok)]
                  [(action:collect? value)
                   (mktok (collect-box (list value)))]

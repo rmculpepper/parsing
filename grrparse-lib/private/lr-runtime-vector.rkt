@@ -100,7 +100,7 @@
            (define-values (args all-args) (pop/peek-values arity ctxn))
            (define (mktok v) (make-nt-token nt v args))
            (define value (apply (get-val action) all-args))
-           (cond [(filter:reject? value)
+           (cond [(action:reject? value)
                   (fail 'reduce (mktok value) next-tok)]
                  [(action:collect? value)
                   (mktok (collect-box (list value)))]

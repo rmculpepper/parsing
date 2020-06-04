@@ -268,7 +268,7 @@
 (define-grammar f1
   [S [() null]
      [(A S) (cons $1 $2)]]
-  [A [(XS) (if (= (length $1) 1) $1 (filter:reject))]]
+  [A [(XS) (if (= (length $1) 1) $1 (action:reject))]]
   [XS [(x) (list $1)]
       [(x XS) (cons $1 $2)]])
 (define fp1 (lr-parser #:grammar f1 #:start S))
