@@ -8,8 +8,8 @@ within the LR-automaton implementation.
 That is, I want to be able to determine how tokens are read based on the parser
 state. For example:
 
-  S ::= [hasString read-prefix] [data read-string]
-      | [hasInteger read-prefix] [data read-number]
+    S ::= [hasString read-prefix] [data read-string]
+        | [hasInteger read-prefix] [data read-number]
 
 (where hasString and hasInteger are tokens readable via read-prefix, and data is
 a token readable by read-string or read-number --- same name, different readers,
@@ -21,8 +21,8 @@ Assuming that the input must be read linearly, that means that at every parsing
 state there must be a single token reader used to make the next transition. For
 example, the following grammar is bad:
 
-  S ::= [a default] [b read-1]
-      | [a default] [c read-2]
+    S ::= [a default] [b read-1]
+        | [a default] [c read-2]
 
 because after reading 'a' with the default reader, there are still two possible
 paths, but they require different readers to get and check the next token. For
@@ -42,7 +42,7 @@ them to resolve S/R and R/R conflicts.
 That is, extend the idea of multiple token readers to allow readers to take
 parameters, computed from earlier parsed values. For example:
 
-  S ::= [n : stringLength read-prefix] [data read-string(n)]
+    S ::= [n : stringLength read-prefix] [data read-string(n)]
 
 This makes the consistency problem harder, because in the general case it would
 require deciding whether two Racket expressions are equivalent (impossible). So
@@ -64,7 +64,7 @@ particular how the stack works. Here's a review of some of the important details
 The stack of an LR-automaton consists of alternating State and Value slots, both
 starting and ending with a State slot: That is (top = left):
 
-  stack = [stateN+1 valueN stateN ... value0 state0]
+    stack = [stateN+1 valueN stateN ... value0 state0]
 
 Each [valueK stateK] segment consists of a terminal- or nonterminal-tagged value
 pushed by stateK, where the terminal or nonterminal appears after the dot in one
@@ -82,38 +82,38 @@ return to an earlier state.
 
 For example, consider the following grammar:
 
-  S  ::= AB c | a BD
-  AB ::= a b
-  BD ::= b d
+    S  ::= AB c | a BD
+    AB ::= a b
+    BD ::= b d
 
 Here are some of the states and their transitions:
 
-  state0:               state1:                 state2:                 state3:
-    S → • AB c    –a→                    –b→                     –d→     
-    S → • a BD            S → a • BD
-    AB → • a b            AB → a • b              AB → a b •              
-                          BD → • b d              BD → b • d              BD → b d •
+    state0:               state1:                 state2:                 state3:
+      S → • AB c    –a→                    –b→                     –d→     
+      S → • a BD            S → a • BD
+      AB → • a b            AB → a • b              AB → a b •              
+                            BD → • b d              BD → b • d              BD → b d •
 
 After reading "ab", the stack looks like this:
 
-  [state2 "b" state1 "a" state0]
+    [state2 "b" state1 "a" state0]
 
 If the lookahead token is a "c", the automaton reduces the AB item in state2,
 popping two values and returning it to state0 --- jumping over state1
 completely!
 
-  [AB state0]   -- on return, stack temporarily has value at top, not state
+    [AB state0]   -- on return, stack temporarily has value at top, not state
 
 Then state0 goes to a state (not shown) containing "S → AB • c".
 
 If the lookahead token is a "d", the automaton shifts it onto the stack and
 moves to state3:
 
-  [state3 "d" state2 "b" state1 "a" state0]
+    [state3 "d" state2 "b" state1 "a" state0]
 
 and then state3 reduces BD and returns to state1 --- jumping over state2!
 
-  [BD state1 "a" state0]
+    [BD state1 "a" state0]
 
 Then state1 goes to a state (not shown) containing "S → a BD •".
 
@@ -135,27 +135,27 @@ terminals can have parameters then nonterminals should be able to have
 parameters too. For example, it should be possible to refactor the example above
 into the following:
 
-  S ::= [n : stringLength read-prefix] StringData(n)
-  StringData(n) ::= [data read-string(n)]
+    S ::= [n : stringLength read-prefix] StringData(n)
+    StringData(n) ::= [data read-string(n)]
 
 How do we pass and receive parameters within the table-driven LR automaton
 framework? What happens if a parameterized nonterminal is used in parallel with
 a non-parameterized nonterminal
 
-  S ::= A(1) | B
-  A(n) ::= a
-  B ::= b
+    S ::= A(1) | B
+    A(n) ::= a
+    B ::= b
 
 or if multiple parameterized nonterminals are used in parallel
 
-  S ::= A(1) | B(2)
-  A(n) ::= a
-  B(n) ::= b
+    S ::= A(1) | B(2)
+    A(n) ::= a
+    B(n) ::= b
 
 or perhaps the same nonterminal with different parameters
 
-  S ::= A(1) | A(2)
-  A(n) ::= a
+    S ::= A(1) | A(2)
+    A(n) ::= a
 
 In these examples, the parameters don't affect parsing, but could be used in the
 action routine, which I've omitted.
@@ -167,7 +167,7 @@ the stack "specially", or the parameters are stored on the stack as values.
 
 By storing parameters specially, I mean this stack layout:
 
-  [stateN+1 paramsN+1 valueN stateN paramsN ... value0 state0 params0]
+    [stateN+1 paramsN+1 valueN stateN paramsN ... value0 state0 params0]
 
 The paramsK slot stores the parameters of nonterminals that appear after dots in
 stateK. By changing the stack structure in a consistent way, we avoid the
@@ -206,14 +206,14 @@ to "load" the parameters before "calling" the parameterized nonterminal. For
 example, this grammar (writing ▶ before the action routine and $[n] for the nth
 value on the stack, indexed from 1):
 
-  S ::= A(1)
-  A(n) ::= a            ▶ n + $[1]
+    S ::= A(1)
+    A(n) ::= a            ▶ n + $[1]
 
 is desugared to this one:
 
-  S ::= LoadParams A
-  LoadParams ::= ε      ▶ 1
-  A ::= a               ▶ $[2] + $[1]   -- note that $[2] is "out of bounds"
+    S ::= LoadParams A
+    LoadParams ::= ε      ▶ 1
+    A ::= a               ▶ $[2] + $[1]   -- note that $[2] is "out of bounds"
 
 The addition of null nonterminals like LoadParams can lead to Shift/Reduce and
 Reduce/Reduce conflicts. Some of those conflicts can be eliminated by lookahead;
@@ -257,21 +257,21 @@ makes it somewhat easier to understate the state of the parser when the error
 occurred --- even without looking at state and transition tables. For example,
 consider the following grammar:
 
-  Sent   ::= Clause
-           | Clause conj Sent
-  Clause ::= NP VP
-  NP     ::= noun
-           | adj NP
-  VP     ::= verb Obj
-           | adv VP
-  Obj    ::= ε
-           | NP
+    Sent   ::= Clause
+             | Clause conj Sent
+    Clause ::= NP VP
+    NP     ::= noun
+             | adj NP
+    VP     ::= verb Obj
+             | adv VP
+    Obj    ::= ε
+             | NP
 
 The parser errors on the input "noun adv verb conj adj noun noun". We can extract the stack,
 discard the states, and reverse it to get the following (with token contents
 omitted):
 
-  #s(token Clause _ 0 2) #s(token conj _ 3 3) #s(token NP _ 4 5) #(token noun _ 6 6)
+    #s(token Clause _ 0 2) #s(token conj _ 3 3) #s(token NP _ 4 5) #(token noun _ 6 6)
 
 That is, tokens 0 to 2 were parsed into a Clause, token 3 is a conjunction,
 tokens 4 to 5 were parsed as a Noun Phrase, and token 6 caused the error.
@@ -283,8 +283,8 @@ some understanding of LR automata states.
 
 Consider the following language:
 
-  E ::= ( Term )
-  Term ::= Term op Term | E | atom
+    E ::= ( Term )
+    Term ::= Term op Term | E | atom
 
 The language is ambiguous, but that's not the point. The point is that it is
 possible to read and parse an E without inspecting the input stream past the
@@ -297,9 +297,9 @@ The traditional description of LR parsing has a pre-processing step which adds a
 new start symbol and a special end-of-input marker. If the original start symbol
 were Term, that yields the following:
 
-  S ::= Term EOI
-  Term ::= Term op Term | E | atom
-  E ::= ( Term )
+    S ::= Term EOI
+    Term ::= Term op Term | E | atom
+    E ::= ( Term )
 
 Then in the state containing "Term → Term op Term •", if the lookahead token is
 "op", we shift and continue parsing; if it is ")" or "EOI" then we reduce.
