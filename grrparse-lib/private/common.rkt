@@ -3,7 +3,6 @@
 
 #lang racket/base
 (require racket/match
-         racket/class
          racket/struct
          racket/generic
          (submod "grammar-rep.rkt" common)
