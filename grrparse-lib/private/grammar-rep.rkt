@@ -15,14 +15,13 @@
   ;; actual overlaps.
 
   ;; A Nonterminal (NT) is a Symbol
-  ;; Users SHOULD only use interned symbols.
   (define (ok-nonterminal? v) (symbol? v))
 
   ;; A Terminal is one of the following:
-  ;; - symbol           -- interned or unreadable
-  ;; - character
-  ;; - boolean
-  ;; - exact-integer
+  ;; - Symbol
+  ;; - Character
+  ;; - Boolean
+  ;; - Exact-Integer
   ;; In particular, a Terminal is quotable and comparable with eqv?.
   (define (ok-terminal? v)
     (or (symbol? v) (char? v) (exact-integer? v)))

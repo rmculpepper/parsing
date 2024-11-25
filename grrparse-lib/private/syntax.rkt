@@ -6,7 +6,8 @@
                      racket/syntax
                      syntax/transformer
                      syntax/free-vars
-                     (rename-in syntax/parse [attribute $])
+                     syntax/parse
+                     (only-in syntax/datum [datum $])
                      "util.rkt"
                      "grammar-rep.rkt")
          "common.rkt")
@@ -39,7 +40,7 @@
              #:attr mkast (lambda (nt?)
                             (def ($ nt.ast) (length ($ ps.spec))
                               (parameterize ((params-spec ($ ps.spec)))
-                                (for/list ([rhs-mkast (in-list ($ rhs.mkast))]
+                                (for/list ([rhs-mkast (in-list ($ (rhs.mkast ...)))]
                                            [index (in-naturals)])
                                   (rhs-mkast ($ nt.ast) index nt?)))))))
 
@@ -76,9 +77,9 @@
                             ;; venv : (Listof Identifier), most recent (top of stack) first
                             (for/fold ([acc null] [venv null]
                                        #:result (values (list->vector (reverse acc)) venv))
-                                      ([e-mkast (in-list ($ e.mkast))]
+                                      ([e-mkast (in-list ($ (e.mkast ...)))]
                                        [e-stx (in-list (syntax->list #'(e ...)))]
-                                       [var (in-list ($ e.name))]
+                                       [var (in-list ($ (e.name ...)))]
                                        [index (in-naturals 1)])
                               (define elem (e-mkast nt? venv))
                               (when (and (= index 1) (top-elem? elem))
@@ -166,7 +167,7 @@
                             (for ([t (in-list (syntax->list #'(t ...)))])
                               (when (nt? (syntax-e t))
                                 (wrong-syntax t "expected terminal")))
-                            ($ t.ast)))
+                            ($ (t.ast ...))))
     (pattern (~seq #:implicit-end)
              #:attr mkast (lambda (nt?) #f)))
 
@@ -242,10 +243,10 @@
 (define-syntax define-grammar
   (syntax-parser
     [(_ name:id d:ntdef ...)
-     (define (nt? s) (member s ($ d.nt.ast)))
+     (define (nt? s) (member s ($ (d.nt.ast ...))))
      (define-values (defs vals)
        (parameterize ((value-table (make-indexer)))
-         (define defs (map-apply ($ d.mkast) nt?))
+         (define defs (map-apply ($ (d.mkast ...)) nt?))
          (values defs (indexer->vector (value-table)))))
      (with-syntax ([(name-vals) (generate-temporaries
                                  (list (format "~a-vals-" (syntax-e #'name))))]
