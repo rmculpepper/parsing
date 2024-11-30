@@ -43,19 +43,11 @@
   (provide (all-defined-out))
 
   ;; A GrammarBuilder is
-  ;; (grammarbuilder (Hasheq Symbol => (U 'et 'vt Def)) Symbols Symbol/#f Symbols/#f)
-  (struct grammarbuilder (h rnames start endts))
+  ;; (grammarbuilder (Hasheq Symbol => (U 'et 'vt Def)) Symbol/#f Symbols/#f)
+  (struct grammarbuilder (h start endts) #:mutable)
 
-  (define (empty-grammarbuilder)
-    (grammarbuilder (hasheq) null #f #f))
-
-  (define (grammar->grammarbuilder g)
-    (match-define (grammar ets vts defs start endts) g)
-    (define h1 (for/fold ([h (hasheq)]) ([et (in-list ets)]) (hash-set h et 'et)))
-    (define h2 (for/fold ([h h1]) ([vt (in-list vts)]) (hash-set h vt 'vt)))
-    (define h3 (for/fold ([h h2]) ([def (in-list defs)]) (hash-set h (def-nt def) def)))
-    (define rnames (append (reverse (map def-nt defs)) (reverse vts) (reverse ets)))
-    (grammarbuilder h3 rnames start endts))
+  (define (make-grammarbuilder)
+    (grammarbuilder (make-hasheq) #f #f))
 
   ;; gb-lookup : Symbol -> (U 'et 'vt Def)
   (define (gb-lookup gb sym)
@@ -64,41 +56,46 @@
   (define ((gb->lookup gb) sym) (gb-lookup gb sym))
 
   (define (gb-add gb names getv [stxs names] [xs names] #:conflict handle-conflict)
-    (match-define (grammarbuilder h rnames start endts) gb)
-    (define-values (h* rnames*)
-      (for/fold ([h h] [rnames rnames])
-                ([name (in-list names)] [stx (in-list stxs)] [x (in-list xs)])
-        (define v (hash-ref h name))
-        (define impv (getv name x))
-        (cond [(and v (eqv? v impv))
-               (values h rnames)]
-              [else
-               (when v (handle-conflict name stx x v impv))
-               (values (hash-set h name impv) (cons name rnames))])))
-    (grammarbuilder h* rnames* start endts))
+    (define h (grammarbuilder-h gb))
+    (for ([name (in-list names)] [stx (in-list stxs)] [x (in-list xs)])
+      (define v (hash-ref h name))
+      (define impv (getv name x))
+      (cond [(and v (eqv? v impv)) (void)]
+            [else
+             (when v (handle-conflict name stx x v impv))
+             (hash-set! h name impv)])))
+
+  (define (hash-set!/check h k v kstx handle-conflict)
+    (define oldv (hash-ref h k #f))
+    (when (and oldv (not (eqv? oldv v)))
+      (handle-conflict k kstx oldv v))
+    (hash-set! h k v))
 
   (define (gb-import-grammar gb impg handle-conflict)
-    (define impgb (grammar->grammarbuilder g))
-    (define imph (grammarbuilder-h impgb))
-    (define impnames (reverse (grammarbuilder-rnames impgb)))
-    (define (getv name _) (hash-ref imph name))
-    (gb-add gb impnames getv #:conflict handle-conflict))
+    (define h (grammarbuilder-h gb))
+    (match-define (grammar ets vts defs start endts) impg)
+    (for ([et (in-list ets)])
+      (hash-set!/check h et 'et #f handle-conflict))
+    (for ([vt (in-list vts)])
+      (hash-set!/check h vt 'vt #f handle-conflict))
+    (for ([d (in-list defs)])
+      (hash-set!/check h (def-nt d) d #f handle-conflict)))
 
   (define (gb-add-terminals gb value? syms stxs #:conflict handle-conflict)
-    (define (getv name _) (if value? 'vt 'et))
-    (gb-add gb syms getv stxs #:conflict handle-conflict))
+    (define h (grammarbuilder-h gb))
+    (for ([tsym (in-list syms)] [tstx (in-list stxs)])
+      (hash-set!/check h tsym (if value? 'vt 'et) tstx handle-conflict)))
 
   (define (gb-add-nonterminals gb defs stxs #:conflict handle-conflict)
-    (define (getv name def) def)
-    (gb-add gb (map def-nt defs) getv stxs defs #:conflict handle-conflict))
+    (define h (grammarbuilder-h gb))
+    (for ([d (in-list defs)] [dstx (in-list stxs)])
+      (hash-set!/check h (def-nt d) d dstx handle-conflict)))
 
   (define (gb-set-start gb start)
-    (match-define (grammarbuilder h rnames _ endts) gb)
-    (grammarbuilder h rnames start endts))
+    (set-grammarbuilder-start! gb start))
 
   (define (gb-set-endts gb endts)
-    (match-define (grammarbuilder h rnames start _) gb)
-    (grammarbuilder h rnames start endts))
+    (set-grammarbuilder-endts! gb endts))
 
   (void))
 
