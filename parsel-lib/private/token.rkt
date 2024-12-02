@@ -21,7 +21,7 @@
 ;; A Token is one of
 ;; - TokenName
 ;; - (tke TokenName)
-;; - (tkv TokenName Payload)
+;; - (tkv TokenName Any)
 ;; - (tke/src TokenName StartLoc EndLoc)
 ;; - (tkv/src TokenName Payload StartLoc EndLoc)
 (struct tke (t) #:reflection-name 'token #:transparent)
@@ -77,6 +77,7 @@
                    t v s e)]
            [else (tkv t v)])]))
 
+;; token-name : Token -> TokenName
 (define (token-name x)
   (match x
     [(? symbol? x) x]
@@ -84,12 +85,14 @@
     [(tkv t _) t]
     [(? datum-terminal? x) x]))
 
+;; token-value : Token -> Any
 (define (token-value t)
   (cond [(tkv? t) (tkv-v t)]
         [(not (token? t))
          (raise-argument-error 'token-value "token?" t)]
         [else (error 'token-value "token has no value\n  token: ~e" t)]))
 
+;; token-sources : Token -> (values StartLoc EndLoc) or (values #f #f)
 (define (token-sources t)
   (match t
     [(tke/src _ s e) (values s e)]
@@ -115,9 +118,20 @@
       [(_ t v s e) #'(? tkv? (tkv t v) (app token-sources s e))]))
   (make-variable-like-transformer #'make-token))
 
+#;
 (define-match-expander token/sources
   (lambda (stx)
     (syntax-case stx ()
       ;; Note: only matches if sources are present.
       [(_ t s e) #'(tke/src t s e)]
       [(_ t v s e) #'(tkv/src t v s e)])))
+
+;; tokens-start+end : (Listof Token) -> (values StartLoc EndLoc) or (values #f #f)
+(define (tokens-start+end ts)
+  (let loop ([ts ts] [s #f] [e #f])
+    (match ts
+      ['() (values s e)]
+      [(cons (tke/src _ s0 e0) ts)
+       (loop ts (or s s0) (or e0 e))]
+      [(cons (tkv/src _ _ s0 e0) ts)
+       (loop ts (or s s0) (or e0 e))])))

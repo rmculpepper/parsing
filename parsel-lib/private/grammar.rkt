@@ -2,8 +2,6 @@
 ;; SPDX-License-Identifier: Apache-2.0
 
 #lang racket/base
-(provide (all-defined-out) (for-syntax (all-defined-out)))
-
 
 ;; ============================================================
 ;; Grammar representation
@@ -29,12 +27,14 @@
   (define (value-elem? e)
     (or (ntelem? e) (and (telem? e) (telem-value? e))))
 
+  ;; A PrecEntry is (list Symbol Nat Assoc).
+  ;; An Assoc is 'left | 'right | 'none.
+
   ;; ----------------------------------------
   ;; Grammars
 
-  ;; A Grammar is (grammar Symbols Symbols (Listof Def) Symbol/#f Symbols/#f)
-  ;; FIXME: add precedence decls?
-  (struct grammar (ets vts defs start endts) #:prefab)
+  ;; A Grammar is (grammar Symbols Symbols Defs PrecEntries Symbol/#f Symbols/#f)
+  (struct grammar (ets vts defs precs start endts) #:prefab)
 
   (void))
 
