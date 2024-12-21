@@ -1,0 +1,41 @@
+For "version 1"
+
+- define $ as stxpararm, use in action routines
+  ($ name) = ($ 1) = ($ #:value 1) -- retrieves token/nt value (stxerr if none)
+  ($ #:token <ref>) -- retrieves whole token
+  ($ #:name <ref>) -- retrieves token/nt name
+  ($ #:start <ref>) -- retrieves start pos (rterr if none)
+  ($ #:prod-start) -- retrieves first start pos in production (rterr if none)
+  etc
+  need -or-false or -r (result) variants to avoid errors?
+
+- "internally-delimited" => "prefix-free grammar"
+  specify better
+
+- finalize token api
+- separate Grammar from Parser; separate interfaces
+- interfaces for parsers
+- allow grammar imports
+- deprecate/hide lexer?
+- deprecate/hide exotic features for now
+- YACC-style precedence declarations
+- more tests
+
+For future
+- LL(*), ALL(*) ?
+
+
+----------------------------------------
+Special features
+
+- syntactic predicates (eg, peek, peek-not?)
+
+- nt params
+
+  maybe change lr automaton stack:
+    [St Tok St ... Tok St] => [St Params Tok St Params ... Tok St Params]
+
+
+;; StStack = (cons PState VStack)
+;; VStack = (cons Token StStack) | null
+;; -- Note: reduced nonterminals are also stored as Tokens
